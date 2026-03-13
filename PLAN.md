@@ -231,30 +231,34 @@ dev-optimizer baseline --history         # View history
 
 ## Dogfooding Results (2026-03-13)
 
-### Before
+### Before → After
 
-| Metric | Value |
-|--------|-------|
-| Score | 72/100 |
-| CI findings | 5 |
-| Deps findings | 6 |
-
-### After
-
-| Metric | Value |
-|--------|-------|
-| Score | 81/100 (+9) |
-| CI findings | 2 (-3) |
-| Deps findings | 6 |
-| Vulnerabilities | 0 |
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| Score | 72/100 | 98/100 | +26 |
+| CI findings | 5 | 1 | -4 |
+| Deps findings | 6 | 0 | -6 |
+| Vulnerabilities | ? | 0 | ✅ |
 
 ### Fixes Applied
 
 | Fix | Impact |
 |-----|--------|
 | Added timeout-minutes | +3 points |
-| Added matrix strategy | +6 points |
-| npm audit fix | 0 vulnerabilities |
+| Added matrix strategy (ci.yml) | +6 points |
+| Added matrix strategy (dev-optimizer.yml) | +6 points |
+| Updated @types/jest | +0 (maintainability) |
+| Updated @types/node | +0 (maintainability) |
+| Updated commander | +0 (maintainability) |
+| Updated eslint | +0 (maintainability) |
+| Updated jest | +0 (maintainability) |
+| Updated ora | +0 (maintainability) |
+
+### Remaining
+
+| Finding | Severity | Note |
+|---------|----------|------|
+| Self-hosted runners | Low | Not applicable for open-source |
 
 ---
 
@@ -262,7 +266,7 @@ dev-optimizer baseline --history         # View history
 
 **GitHub:** `https://github.com/bigcheburashka/dev-optimizer` (private)
 **Branch:** main
-**Commits:** 28
+**Commits:** 30
 **Tests:** 59 passing
 **License:** MIT
-**Dogfooding:** ✅ Score improved from 72 to 81
+**Dogfooding:** ✅ Score improved from 72 to 98 (+26)
