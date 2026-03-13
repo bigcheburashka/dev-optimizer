@@ -1,263 +1,224 @@
 # dev-optimizer — Development Plan
 
 > **Positioning:** Cut CI time, dependency bloat, and Docker waste before merge.
-> **Not** "another linter" — prioritized savings with ROI estimates and safe autofix.
-
-## Product Strategy
-
-Based on market research, the key insight is:
-- **Problem:** Teams waste money/time on inefficient CI, bloated deps, and Docker images
-- **Gap:** Existing tools are fragmented (hadolint, Trivy, Knip, Dependabot) with no unified prioritization or ROI
-- **Solution:** One report, clear savings, safe fixes — focused on 3 domains only
-
-### What We Build (MVP)
-
-| Domain | Features | Why |
-|--------|----------|-----|
-| **CI Optimization** | GitHub Actions parser, cache detection, parallelization, cost estimate | Highest commercial value, clear ROI |
-| **Dependency Hygiene** | Unused/duplicate deps, heavy packages, install size impact | Real pain, Knip proves demand |
-| **Docker Build** | .dockerignore, multistage detection, layer analysis, build time | Standard optimization, safe autofix |
-
-### What We Don't Build (v1)
-
-| Feature | Why Not |
-|---------|---------|
-| Bundle analyzer | Covered by webpack-bundle-analyzer, ecosystem plugins |
-| Security scanner | Crowded market (Snyk, Trivy, Docker Scout) |
-| Files cleanup | Low willingness to pay |
-| Generic "base image suggestion" | Needs confidence model, not universal |
+> **Core value:** One report, clear savings, safe fixes — not another linter.
 
 ---
 
-## Monetization Model
+## MVP Scope (4 weeks)
 
-**Open Source CLI + SaaS Upsell**
+### In Scope
 
-| Tier | Price | Features |
-|------|-------|----------|
-| **Free** | $0 | Local analyze, console report, limited autofix, 1 repo |
-| **Pro** | $19/mo | PR comments, history, dashboards, 10 repos |
-| **Team** | $49/mo | Org policies, unlimited repos, ROI reporting |
-| **Enterprise** | Custom | Private deployment, SSO, Slack/Jira integration |
+| Domain | Analysis | Auto-fix |
+|--------|----------|----------|
+| **CI/CD** | GitHub Actions: cache, matrix, timeout, parallelization | Add cache via setup-node |
+| **Dependencies** | Unused deps, duplicates, prod/dev classification, heavy packages | Remove unused (high confidence only) |
+| **Docker** | .dockerignore, multistage, base image, cleanup | Create .dockerignore (always safe) |
 
-**Why this model:**
-- CLI is commoditized (free tools exist)
-- Value is in workflow integration, visibility, and team controls
-- Snyk, Docker, GitHub monetize this way
+### Out of Scope (Post-MVP)
 
----
-
-## ICP (Target Customer)
-
-1. **Primary:** JS/TS teams 10-200 engineers with GitHub/GitLab CI
-2. **Secondary:** Platform/DevEx teams needing fleet-wide standards
-3. **Tertiary:** Startups with high CI bills
-
-**Not targeting:** Solo devs (low willingness to pay), enterprise security teams (Snyk/Socket owned)
+- Bundle analyzer (use webpack-bundle-analyzer)
+- Security scanner (Snyk, Trivy owned)
+- License policy
+- Performance history
+- Dashboard/SaaS
+- GitLab CI (Phase 2)
+- Enterprise features
 
 ---
 
-## MVP Scope (Weeks 1-3)
-
-### Week 1: Foundation + CI Analyzer
-
-```
-src/
-├── analyzers/
-│   ├── CiAnalyzer.ts          # GitHub Actions parser
-│   ├── DockerAnalyzer.ts      # (exists) Refine for ROI
-│   └── DepAnalyzer.ts         # Dependency analysis
-├── parsers/
-│   └── GitHubActionsParser.ts # .github/workflows/*.yml
-├── metrics/
-│   ├── CiCostEstimator.ts     # GitHub Actions pricing
-│   └── SavingsCalculator.ts   # Before/after ROI
-└── reporters/
-    └── PrCommentReporter.ts   # GitHub PR integration
-```
-
-**DoD:**
-- [ ] Parse GitHub Actions workflow files
-- [ ] Detect missing cache configuration
-- [ ] Identify parallelization opportunities
-- [ ] Estimate monthly CI cost savings
-- [ ] Test on 3 public repos with known CI issues
-
-### Week 2: Dependency + Docker Optimization
-
-```
-src/
-├── analyzers/
-│   └── DepAnalyzer.ts         # Complete implementation
-├── fixers/
-│   ├── DockerignoreFixer.ts   # Safe autofix
-│   └── PackageJsonFixer.ts    # Dep fixes with confidence
-└── utils/
-    └── ConfidenceScore.ts     # Safety scoring
-```
-
-**DoD:**
-- [ ] Detect unused dependencies (integrate Knip or reimplement)
-- [ ] Find duplicate versions
-- [ ] Score heavy packages with alternatives
-- [ ] Calculate install size impact
-- [ ] Apply safe autofix for .dockerignore (100% confidence)
-- [ ] Generate patch files for risky fixes (review-first)
-
-### Week 3: Integration + Launch
-
-```
-src/
-├── integrations/
-│   └── GitHubAction.ts        # GitHub Action entry point
-├── reporters/
-│   ├── MarkdownReporter.ts    # PR comment format
-│   └── JsonReporter.ts        # CI artifact
-└── cli.ts                     # Finalize CLI
-```
-
-**DoD:**
-- [ ] GitHub Action published to Marketplace
-- [ ] PR comment with prioritized recommendations
-- [ ] Confidence score visible per fix
-- [ ] Before/after metrics in report
-- [ ] README with quickstart (1 command setup)
-- [ ] Demo video showing savings on real repo
-
----
-
-## Test Repositories
-
-Target repos for validation (public, known issues):
-
-| Repo | Issue | Expected Improvement |
-|------|-------|---------------------|
-| strapi/strapi | Slow CI, large node_modules | 30-40% CI time reduction |
-| nginx-proxy-manager | 1.1 GB image | 60% size reduction |
-| create-react-app | Large node_modules | 25% deps reduction |
-| vercel/next.js | Complex CI matrix | Cache optimization |
-| pytorch/serve | 13 GB image | Base image suggestion |
-
----
-
-## Metrics & DoD per Phase
-
-### Success Metrics
-
-| Metric | Target | How Measured |
-|--------|--------|-------------|
-| CLI startup | < 500ms | `time npx dev-optimizer --version` |
-| Analysis time | < 30s | Full repo scan |
-| npm package size | < 1 MB | `npm pack` |
-| Test coverage | > 80% | Jest --coverage |
-| Real repo improvements | 5+ repos | Documented before/after |
-| GitHub installs | 100+ in Month 1 | GitHub Marketplace |
-
-### Definition of Done (Each Feature)
-
-- [ ] Unit tests > 80% coverage
-- [ ] Integration test on real repo
-- [ ] Before/after metrics documented
-- [ ] Confidence score assigned to fixes
-- [ ] Safe autofix validated (no breaking changes)
-- [ ] CLI help text and README updated
-
----
-
-## Roadmap Beyond MVP
-
-### Stage 2: Cloud Dashboard (Month 2)
-
-- History and regression tracking
-- Repo comparison
-- Team dashboards
-- Weekly optimization reports
-
-### Stage 3: Autofix PRs (Month 3)
-
-- Safe-first patches
-- Automated validation runs
-- Rollback-friendly diffs
-- PR review workflow
-
-### Stage 4: Enterprise (Month 4+)
-
-- Private deployment
-- SSO integration
-- Org-wide policies
-- Slack/Jira notifications
-- Custom rules engine
-
----
-
-## Technical Architecture
+## Architecture
 
 ```
 dev-optimizer/
 ├── src/
 │   ├── index.ts              # CLI entry
-│   ├── types.ts              # Interfaces
+│   ├── types.ts              # Finding schema (unified)
 │   │
 │   ├── analyzers/
-│   │   ├── CiAnalyzer.ts     # GitHub Actions, GitLab CI
-│   │   ├── DepAnalyzer.ts    # npm, yarn, pnpm
-│   │   └── DockerAnalyzer.ts # Dockerfile, .dockerignore
+│   │   ├── CiAnalyzer.ts     # GitHub Actions parser
+│   │   ├── DepsAnalyzer.ts  # package.json analysis
+│   │   └── DockerAnalyzer.ts # Dockerfile analysis
 │   │
-│   ├── parsers/
-│   │   ├── YamlParser.ts     # CI config parsing
-│   │   └── PackageParser.ts  # package.json parsing
+│   ├── discovery/
+│   │   └── RepoInventory.ts  # Detect files, lockfiles
+│   │
+│   ├── scoring/
+│   │   ├── Confidence.ts     # High/Medium/Low
+│   │   └── ImpactEstimator.ts # Time/size savings
 │   │
 │   ├── fixers/
-│   │   ├── Autofixer.ts      # Safe fix application
-│   │   └── Confidence.ts     # Safety scoring
+│   │   ├── DockerignoreFixer.ts
+│   │   ├── CacheFixer.ts
+│   │   └── DepsFixer.ts
 │   │
-│   ├── metrics/
-│   │   ├── CostEstimator.ts  # CI cost calculation
-│   │   └── Savings.ts        # ROI calculation
-│   │
-│   ├── reporters/
-│   │   ├── ConsoleReporter.ts
-│   │   ├── MarkdownReporter.ts
-│   │   └── PrReporter.ts
-│   │
-│   └── integrations/
-│       └── GitHubAction.ts
+│   └── reporters/
+│       ├── TableReporter.ts   # Console output
+│       ├── MarkdownReporter.ts # PR comments
+│       └── JsonReporter.ts    # CI/CD integration
 │
 ├── tests/
-│   ├── fixtures/
-│   ├── unit/
-│   └── integration/
+│   ├── fixtures/              # Demo repos
+│   └── unit/                  # Per-module tests
 │
 └── docs/
-    ├── ARCHITECTURE.md
-    └── METRICS.md
+    ├── mvp-scope.md
+    ├── finding-schema.md
+    ├── demo-script.md
+    └── dod.md
 ```
 
 ---
 
-## Current Status
+## Finding Schema (Unified)
 
-### Completed
+```typescript
+interface Finding {
+  id: string;
+  domain: 'ci' | 'deps' | 'docker';
+  title: string;
+  description: string;
+  evidence: {
+    file?: string;
+    line?: number;
+    snippet?: string;
+    metrics?: Record<string, number>;
+  };
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  confidence: 'high' | 'medium' | 'low';
+  impact: {
+    type: 'time' | 'size' | 'cost';
+    estimate: string;
+  };
+  suggestedFix: {
+    type: 'create' | 'modify' | 'delete';
+    file: string;
+    diff?: string;
+    autoFixable: boolean;
+  };
+}
+```
 
-- [x] Project structure (TypeScript + ESM)
-- [x] DockerAnalyzer (basic)
-- [x] NpmAnalyzer (basic)
-- [x] ConsoleReporter
-- [x] Test infrastructure
-- [x] Git repository initialized
+Full schema: `docs/finding-schema.md`
 
-### Next Steps (This Session)
+---
 
-1. **Create remote repository** → GitHub/GitLab
-2. **Add CI analyzer** → GitHub Actions parser
-3. **Refine messaging** → ROI-focused reports
-4. **Create demo** → Before/after on real repo
+## Timeline (4 weeks)
+
+### Week 1: Foundation (CURRENT)
+- [x] Architecture design
+- [x] Finding schema
+- [x] CLI skeleton
+- [x] Docker analyzer (basic)
+- [x] CI analyzer (basic)
+- [ ] Repo inventory
+- [ ] Baseline report
+
+### Week 2: Analyzers
+- [x] Docker analyzer (partial)
+- [ ] Dependency analyzer with confidence
+- [x] CI analyzer (GitHub Actions)
+- [ ] Markdown reporter
+- [ ] Top findings ranking
+
+### Week 3: Fixes & Ranking
+- [ ] Safe fix engine
+- [ ] Dockerignore fixer
+- [ ] Cache fixer
+- [ ] Scoring/ranking
+- [ ] Demo repos setup
+
+### Week 4: Polish
+- [ ] Bug fixes
+- [ ] Documentation
+- [ ] Demo script
+- [ ] Packaging (npm)
+
+---
+
+## DoD per Week
+
+### Week 1 DoD
+- [ ] `dev-optimizer analyze` runs on any repo
+- [ ] Detects 3 domains (ci, deps, docker)
+- [ ] Returns unified findings
+- [ ] Has test fixtures for each domain
+
+### Week 2 DoD
+- [ ] All 3 analyzers produce findings
+- [ ] Markdown report is human-readable
+- [ ] Top findings ranked correctly
+
+### Week 3 DoD
+- [ ] `fix --safe` applies safe fixes
+- [ ] `fix --dry-run` shows diffs
+- [ ] Confidence model implemented
+
+### Week 4 DoD
+- [ ] Demo runs in < 5 minutes
+- [ ] README is complete
+- [ ] Published to npm
+
+---
+
+## Status Report Format
+
+After each work session:
+
+```
+### 1. Что сделано
+- [items]
+
+### 2. Что работает
+- [runnable items]
+
+### 3. Что не сделано
+- [explicit list]
+
+### 4. Риски / ограничения
+- [constraints]
+
+### 5. Следующий шаг
+- [single next step]
+```
+
+---
+
+## Success Metrics (MVP)
+
+| Metric | Target |
+|--------|---------|
+| Analysis time | < 30 seconds |
+| Findings per repo | 5-10 |
+| False positive rate | < 20% |
+| Safe fix accuracy | > 95% |
+| Demo time | < 5 minutes |
+
+---
+
+## Test Repositories
+
+| Repo | Type | Issues covered |
+|------|------|----------------|
+| demo-service | Node.js microservice | Docker + CI basics |
+| demo-frontend | React/Vite app | Dependencies |
+| demo-fullstack | Monorepo | All domains |
+
+---
+
+## Next Step
+
+**Week 1 continues:**
+1. Complete `RepoInventory.ts` — detect package.json, Dockerfile, CI configs
+2. Implement unified `Finding` type in `types.ts`
+3. Add baseline section to report
 
 ---
 
 ## References
 
-- [hadolint](https://github.com/hadolint/hadolint) — Dockerfile linter
-- [Knip](https://knip.dev/) — Unused deps/exports
-- [GitHub Actions Pricing](https://docs.github.com/en/billing/actions-billing)
-- [Snyk Open Source](https://docs.snyk.io/scan-with-snyk/snyk-open-source)
+- `docs/brief.md` — Agent brief
+- `docs/dod.md` — Definition of Done
+- `docs/finding-schema.md` — Finding model
+- `docs/mvp-scope.md` — Scope boundaries
+- `docs/demo-script.md` — Demo preparation
