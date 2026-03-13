@@ -2,11 +2,24 @@
  * Docker Analyzer
  * Analyzes Dockerfile for optimization opportunities
  * Returns unified Finding[] format
+ *
+ * Modes:
+ * - Quick: Static analysis only
+ * - Full: + hadolint linting (requires hadolint)
+ * - Deep: + image layer analysis (requires docker)
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import * as childProcess from 'child_process';
 export class DockerAnalyzer {
     name = 'docker';
+    options;
+    constructor(options = {}) {
+        this.options = {
+            mode: 'full',
+            ...options
+        };
+    }
     async isApplicable(projectPath) {
         const dockerfile = path.join(projectPath, 'Dockerfile');
         const dockerfileLower = path.join(projectPath, 'dockerfile');
@@ -155,6 +168,24 @@ export class DockerAnalyzer {
                 autoFixSafe: false
             });
         }
+        // Finding: Layer optimization (consecutive RUN)
+        const layerFinding = this.checkLayerOptimization(dockerfile);
+        if (layerFinding) {
+            findings.push(layerFinding);
+        }
+        // Finding: COPY vs ADD
+        const copyFinding = this.checkCopyVsAdd(dockerfile);
+        if (copyFinding) {
+            findings.push(copyFinding);
+        }
+        // Finding: WORKDIR usage
+        const workdirFinding = this.checkWorkdir(dockerfile);
+        if (workdirFinding) {
+            findings.push(workdirFinding);
+        }
+        // Finding: Hadolint (full mode)
+        const hadolintFindings = await this.runHadolint(projectPath);
+        findings.push(...hadolintFindings);
         const savings = this.calculateSavings(findings);
         return {
             analyzer: 'docker',
@@ -251,6 +282,210 @@ export class DockerAnalyzer {
         const copyCount = (dockerfile.match(/^COPY/gm) || []).length;
         const addCount = (dockerfile.match(/^ADD/gm) || []).length;
         return runCount + copyCount + addCount + 1;
+    }
+    /**
+     * Check for layer optimization opportunities
+     */
+    checkLayerOptimization(dockerfile) {
+        const lines = dockerfile.split('\n');
+        const runCommands = [];
+        lines.forEach((line, i) => {
+            if (line.trim().startsWith('RUN')) {
+                runCommands.push(i);
+            }
+        });
+        // Check for consecutive RUN commands (can be combined)
+        const consecutiveRuns = [];
+        let currentGroup = [];
+        runCommands.forEach((idx, i) => {
+            if (i === 0 || idx === runCommands[i - 1] + 1) {
+                currentGroup.push(idx);
+            }
+            else {
+                if (currentGroup.length > 1)
+                    consecutiveRuns.push(currentGroup);
+                currentGroup = [idx];
+            }
+        });
+        if (currentGroup.length > 1)
+            consecutiveRuns.push(currentGroup);
+        if (consecutiveRuns.length > 0) {
+            return {
+                id: 'docker-007',
+                domain: 'docker',
+                title: 'Multiple consecutive RUN commands',
+                description: `Found ${consecutiveRuns.length} groups of consecutive RUN commands that can be combined to reduce layers.`,
+                evidence: {
+                    file: 'Dockerfile',
+                    metrics: { groups: consecutiveRuns.length }
+                },
+                severity: 'medium',
+                confidence: 'high',
+                impact: {
+                    type: 'size',
+                    estimate: `Reduce layers by ${consecutiveRuns.length} and image size by 5-10 MB`,
+                    confidence: 'medium'
+                },
+                suggestedFix: {
+                    type: 'modify',
+                    file: 'Dockerfile',
+                    description: 'Combine consecutive RUN commands with &&',
+                    autoFixable: false
+                },
+                autoFixSafe: false
+            };
+        }
+        return null;
+    }
+    /**
+     * Check for COPY vs ADD usage
+     */
+    checkCopyVsAdd(dockerfile) {
+        const addMatches = dockerfile.match(/^ADD\s+.+/gm);
+        if (addMatches && addMatches.length > 0) {
+            // Check if ADD is used for local files (should be COPY)
+            const addForLocal = addMatches.filter(cmd => {
+                const parts = cmd.split(/\s+/);
+                // ADD with local source path (not URL)
+                return parts.length >= 3 && !parts[1].startsWith('http') && !parts[1].startsWith('https');
+            });
+            if (addForLocal.length > 0) {
+                return {
+                    id: 'docker-008',
+                    domain: 'docker',
+                    title: 'ADD used instead of COPY',
+                    description: `${addForLocal.length} ADD command(s) should be COPY for local files.`,
+                    evidence: {
+                        file: 'Dockerfile',
+                        snippet: addForLocal[0]
+                    },
+                    severity: 'low',
+                    confidence: 'high',
+                    impact: {
+                        type: 'security',
+                        estimate: 'COPY is more explicit and secure than ADD',
+                        confidence: 'high'
+                    },
+                    suggestedFix: {
+                        type: 'modify',
+                        file: 'Dockerfile',
+                        description: 'Replace ADD with COPY for local files',
+                        autoFixable: false
+                    },
+                    autoFixSafe: false
+                };
+            }
+        }
+        return null;
+    }
+    /**
+     * Check for workdir usage
+     */
+    checkWorkdir(dockerfile) {
+        const hasWorkdir = /^WORKDIR\s+/m.test(dockerfile);
+        const hasCd = /cd\s+\//.test(dockerfile) || /&&\s*cd\s+/.test(dockerfile);
+        if (!hasWorkdir && hasCd) {
+            return {
+                id: 'docker-009',
+                domain: 'docker',
+                title: 'Use WORKDIR instead of cd',
+                description: 'Using cd commands instead of WORKDIR. WORKDIR is clearer and more maintainable.',
+                evidence: {
+                    file: 'Dockerfile'
+                },
+                severity: 'low',
+                confidence: 'high',
+                impact: {
+                    type: 'time',
+                    estimate: 'Improve Dockerfile readability',
+                    confidence: 'high'
+                },
+                suggestedFix: {
+                    type: 'modify',
+                    file: 'Dockerfile',
+                    description: 'Replace cd commands with WORKDIR',
+                    autoFixable: false
+                },
+                autoFixSafe: false
+            };
+        }
+        return null;
+    }
+    /**
+     * Run hadolint for advanced Dockerfile linting
+     * Full mode - requires hadolint binary
+     */
+    async runHadolint(projectPath) {
+        if (this.options.mode === 'quick') {
+            return [];
+        }
+        const findings = [];
+        try {
+            const dockerfilePath = path.join(projectPath, 'Dockerfile');
+            const result = childProcess.execSync(`hadolint ${dockerfilePath} --format json`, {
+                encoding: 'utf-8',
+                timeout: 30000,
+                stdio: ['pipe', 'pipe', 'pipe']
+            });
+            const issues = JSON.parse(result);
+            for (const issue of issues) {
+                // Map hadolint rules to findings
+                const severity = issue.level === 'error' ? 'high' :
+                    issue.level === 'warning' ? 'medium' : 'low';
+                findings.push({
+                    id: `docker-hadolint-${issue.code}`,
+                    domain: 'docker',
+                    title: `Hadolint: ${issue.code}`,
+                    description: issue.message,
+                    evidence: {
+                        file: 'Dockerfile',
+                        line: issue.line
+                    },
+                    severity: severity,
+                    confidence: 'high',
+                    impact: {
+                        type: 'security',
+                        estimate: 'Dockerfile best practice violation',
+                        confidence: 'medium'
+                    },
+                    suggestedFix: {
+                        type: 'modify',
+                        file: 'Dockerfile',
+                        description: issue.message,
+                        autoFixable: false
+                    },
+                    autoFixSafe: false
+                });
+            }
+        }
+        catch (error) {
+            // hadolint not installed or no issues
+            // Add suggestion to install hadolint
+            if (this.options.mode === 'deep') {
+                findings.push({
+                    id: 'docker-hadolint-missing',
+                    domain: 'docker',
+                    title: 'Hadolint not available',
+                    description: 'Install hadolint for advanced Dockerfile linting.',
+                    evidence: {},
+                    severity: 'low',
+                    confidence: 'high',
+                    impact: {
+                        type: 'time',
+                        estimate: 'Additional Dockerfile analysis',
+                        confidence: 'low'
+                    },
+                    suggestedFix: {
+                        type: 'create',
+                        file: 'hadolint',
+                        description: 'Install hadolint: https://github.com/hadolint/hadolint',
+                        autoFixable: false
+                    },
+                    autoFixSafe: false
+                });
+            }
+        }
+        return findings;
     }
 }
 //# sourceMappingURL=DockerAnalyzer.js.map
