@@ -10,6 +10,7 @@ import { CiAnalyzer } from '../analyzers/CiAnalyzer.js';
 import { ConsoleReporter } from '../reporters/ConsoleReporter.js';
 import { MarkdownReporter } from '../reporters/MarkdownReporter.js';
 import { RepoScanner } from '../discovery/RepoInventory.js';
+import ora from 'ora';
 export async function analyzeCommand(options) {
     const projectPath = path.resolve(options.path);
     // Verify path exists
@@ -17,14 +18,22 @@ export async function analyzeCommand(options) {
         console.error(`Path not found: ${projectPath}`);
         process.exit(1);
     }
-    console.log(`🔍 Dev Optimizer v0.1.0\n`);
-    console.log(`Analyzing: ${projectPath}\n`);
+    // Spinner for UX
+    const spinner = ora({ spinner: 'dots', color: 'cyan' });
+    if (!options.quiet) {
+        console.log(`🔍 Dev Optimizer v0.1.0\n`);
+    }
     // Scan repository
+    if (!options.quiet) {
+        spinner.start('Scanning repository...');
+    }
     const scanner = new RepoScanner();
     const inventory = await scanner.scan(projectPath);
-    // Print inventory summary
-    console.log(scanner.printSummary(inventory));
-    console.log('');
+    if (!options.quiet) {
+        spinner.succeed('Repository scanned');
+        console.log(scanner.printSummary(inventory));
+        console.log('');
+    }
     // Initialize analyzers
     const dockerAnalyzer = new DockerAnalyzer();
     const depsAnalyzer = new DepsAnalyzer();
@@ -48,46 +57,72 @@ export async function analyzeCommand(options) {
     // Docker analysis
     if (domains.includes('docker')) {
         if (await dockerAnalyzer.isApplicable(projectPath)) {
-            console.log('🐳 Running Docker analysis...');
+            if (!options.quiet) {
+                spinner.start('🐳 Running Docker analysis...');
+            }
             const result = await dockerAnalyzer.analyze(projectPath);
             allFindings.push(...result.findings);
             baseline = { ...baseline, ...result.baseline };
             totalSavings.timeSeconds += result.savings.timeSeconds;
             totalSavings.sizeMB += result.savings.sizeMB;
+            if (!options.quiet) {
+                spinner.succeed(`Docker analysis: ${result.findings.length} findings`);
+            }
         }
         else {
-            console.log('⚠️  Dockerfile not applicable');
+            if (!options.quiet) {
+                spinner.info('🐳 Docker not applicable');
+            }
         }
     }
     // Dependencies analysis
     if (domains.includes('deps')) {
         if (await depsAnalyzer.isApplicable(projectPath)) {
-            console.log('📦 Running Dependencies analysis...');
+            if (!options.quiet) {
+                spinner.start('📦 Running Dependencies analysis...');
+            }
             const result = await depsAnalyzer.analyze(projectPath);
             allFindings.push(...result.findings);
             baseline = { ...baseline, ...result.baseline };
             totalSavings.timeSeconds += result.savings.timeSeconds;
             totalSavings.sizeMB += result.savings.sizeMB;
+            if (!options.quiet) {
+                spinner.succeed(`Dependencies analysis: ${result.findings.length} findings`);
+            }
         }
         else {
-            console.log('⚠️  package.json not applicable');
+            if (!options.quiet) {
+                spinner.info('📦 package.json not applicable');
+            }
         }
     }
     // CI/CD analysis
     if (domains.includes('ci')) {
         if (await ciAnalyzer.isApplicable(projectPath)) {
-            console.log('🔄 Running CI/CD analysis...');
+            if (!options.quiet) {
+                spinner.start('🔄 Running CI/CD analysis...');
+            }
             const result = await ciAnalyzer.analyze(projectPath);
             allFindings.push(...result.findings);
             baseline = { ...baseline, ...result.baseline };
             totalSavings.timeSeconds += result.savings.timeSeconds;
+            if (!options.quiet) {
+                spinner.succeed(`CI/CD analysis: ${result.findings.length} findings`);
+            }
         }
         else {
-            console.log('⚠️  CI config not applicable');
+            if (!options.quiet) {
+                spinner.info('🔄 CI config not applicable');
+            }
         }
     }
+    if (!options.quiet) {
+        console.log('');
+    }
     if (allFindings.length === 0) {
-        console.log('\n✅ No issues found!\n');
+        if (!options.quiet) {
+            console.log('✅ No issues found!\n');
+        }
         return;
     }
     // Sort findings by severity + confidence
