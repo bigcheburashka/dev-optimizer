@@ -18,6 +18,8 @@
 | Safe auto-fixes | ✅ Done |
 | GitHub Action for PR comments | ✅ Done |
 | Extended analyzers | ✅ Done |
+| Polish (spinner, flags) | ✅ Done |
+| GitLab CI support | ✅ Done |
 
 ### Stage 2: Cloud Dashboard ⏳ NEXT
 
