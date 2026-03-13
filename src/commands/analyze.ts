@@ -10,6 +10,7 @@ import { DepsAnalyzer } from '../analyzers/DepsAnalyzer.js';
 import { CiAnalyzer } from '../analyzers/CiAnalyzer.js';
 import { ConsoleReporter } from '../reporters/ConsoleReporter.js';
 import { MarkdownReporter } from '../reporters/MarkdownReporter.js';
+import { RepoScanner } from '../discovery/RepoInventory.js';
 import { FullReport, Finding, Domain } from '../types.js';
 
 interface AnalyzeOptions {
@@ -28,7 +29,16 @@ export async function analyzeCommand(options: AnalyzeOptions): Promise<void> {
     process.exit(1);
   }
 
+  console.log(`🔍 Dev Optimizer v0.1.0\n`);
   console.log(`Analyzing: ${projectPath}\n`);
+
+  // Scan repository
+  const scanner = new RepoScanner();
+  const inventory = await scanner.scan(projectPath);
+  
+  // Print inventory summary
+  console.log(scanner.printSummary(inventory));
+  console.log('');
 
   // Initialize analyzers
   const dockerAnalyzer = new DockerAnalyzer();
@@ -36,59 +46,68 @@ export async function analyzeCommand(options: AnalyzeOptions): Promise<void> {
   const ciAnalyzer = new CiAnalyzer();
   
   const allFindings: Finding[] = [];
-  let baseline = {
-    projectType: 'unknown',
-    hasPackageJson: false,
-    hasDockerfile: false,
-    hasCi: false,
-    dependencyCount: 0
-  };
+  let baseline = inventory.baseline;
   let totalSavings = { timeSeconds: 0, sizeMB: 0, percentImprovement: 0 };
 
-  // Run applicable analyzers
+  // Determine which domains to analyze
   const domains: Domain[] = options.type === 'all' 
-    ? ['docker', 'deps', 'ci']
-    : [options.type as Domain];
+    ? inventory.availableDomains
+    : [options.type as Domain].filter(d => inventory.availableDomains.includes(d));
 
+  // Warn about missing domains
+  if (options.type !== 'all') {
+    const requested = options.type as Domain;
+    if (!inventory.availableDomains.includes(requested)) {
+      console.log(`⚠️  Warning: ${requested} analysis requested but not available.`);
+      console.log(`   Available domains: ${inventory.availableDomains.join(', ') || 'none'}\n`);
+    }
+  }
+
+  // Run applicable analyzers
   // Docker analysis
   if (domains.includes('docker')) {
     if (await dockerAnalyzer.isApplicable(projectPath)) {
-      console.log('Running Docker analysis...');
+      console.log('🐳 Running Docker analysis...');
       const result = await dockerAnalyzer.analyze(projectPath);
       allFindings.push(...result.findings);
-      baseline = { ...baseline, ...result.baseline, hasDockerfile: true };
+      baseline = { ...baseline, ...result.baseline };
       totalSavings.timeSeconds += result.savings.timeSeconds;
       totalSavings.sizeMB += result.savings.sizeMB;
     } else {
-      console.log('No Dockerfile found, skipping Docker analysis.');
+      console.log('⚠️  Dockerfile not applicable');
     }
   }
 
   // Dependencies analysis
   if (domains.includes('deps')) {
     if (await depsAnalyzer.isApplicable(projectPath)) {
-      console.log('Running Dependencies analysis...');
+      console.log('📦 Running Dependencies analysis...');
       const result = await depsAnalyzer.analyze(projectPath);
       allFindings.push(...result.findings);
-      baseline = { ...baseline, ...result.baseline, hasPackageJson: true };
+      baseline = { ...baseline, ...result.baseline };
       totalSavings.timeSeconds += result.savings.timeSeconds;
       totalSavings.sizeMB += result.savings.sizeMB;
     } else {
-      console.log('No package.json found, skipping Dependencies analysis.');
+      console.log('⚠️  package.json not applicable');
     }
   }
 
   // CI/CD analysis
   if (domains.includes('ci')) {
     if (await ciAnalyzer.isApplicable(projectPath)) {
-      console.log('Running CI/CD analysis...');
+      console.log('🔄 Running CI/CD analysis...');
       const result = await ciAnalyzer.analyze(projectPath);
       allFindings.push(...result.findings);
-      baseline = { ...baseline, ...result.baseline, hasCi: true };
+      baseline = { ...baseline, ...result.baseline };
       totalSavings.timeSeconds += result.savings.timeSeconds;
     } else {
-      console.log('No CI/CD config found, skipping CI analysis.');
+      console.log('⚠️  CI config not applicable');
     }
+  }
+
+  if (allFindings.length === 0) {
+    console.log('\n✅ No issues found!\n');
+    return;
   }
 
   // Sort findings by severity + confidence
@@ -109,6 +128,15 @@ export async function analyzeCommand(options: AnalyzeOptions): Promise<void> {
   const quickWins = allFindings.filter(f => f.suggestedFix.autoFixable && f.confidence === 'high');
   const manualReview = allFindings.filter(f => !f.autoFixSafe || f.confidence !== 'high');
 
+  // Calculate percentage improvement
+  if (baseline.nodeModulesSizeMB && totalSavings.sizeMB > 0) {
+    totalSavings.percentImprovement = Math.round(
+      (totalSavings.sizeMB / baseline.nodeModulesSizeMB) * 100
+    );
+  } else if (totalSavings.sizeMB > 0) {
+    totalSavings.percentImprovement = Math.round(totalSavings.sizeMB / 10);
+  }
+
   // Build report
   const report: FullReport = {
     timestamp: new Date().toISOString(),
@@ -124,6 +152,8 @@ export async function analyzeCommand(options: AnalyzeOptions): Promise<void> {
   };
 
   // Output report
+  console.log('\n' + '═'.repeat(60) + '\n');
+
   switch (options.output) {
     case 'json':
       console.log(JSON.stringify(report, null, 2));
