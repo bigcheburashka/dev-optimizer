@@ -1,0 +1,16 @@
+# Files to exclude from npm package
+src/
+tests/
+node_modules/
+coverage/
+.git/
+.github/
+.vscode/
+*.test.ts
+*.spec.ts
+tsconfig.json
+vitest.config.ts
+eslint.config.js
+*.log
+*.map
+.DS_Store
