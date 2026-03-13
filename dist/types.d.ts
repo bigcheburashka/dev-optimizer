@@ -5,7 +5,7 @@
 export type Domain = 'ci' | 'deps' | 'docker';
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 export type Confidence = 'high' | 'medium' | 'low';
-export type ImpactType = 'time' | 'size' | 'cost';
+export type ImpactType = 'time' | 'size' | 'cost' | 'security' | 'maintenance';
 export interface Evidence {
     file?: string;
     line?: number;

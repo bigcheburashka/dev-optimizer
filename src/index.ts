@@ -20,8 +20,10 @@ program
   .description('Analyze project for optimization opportunities')
   .option('-p, --path <path>', 'Path to project', '.')
   .option('-o, --output <format>', 'Output format: console, json, markdown', 'console')
-  .option('-t, --type <type>', 'Analysis type: docker, npm, ci, all', 'all')
+  .option('-t, --type <type>', 'Analysis type: docker, deps, ci, all', 'all')
   .option('--top <n>', 'Show top N findings', '5')
+  .option('--quick', 'Quick mode - fast analysis without npm commands', false)
+  .option('--deep', 'Deep mode - thorough analysis with size estimates', false)
   .action(analyzeCommand);
 
 program

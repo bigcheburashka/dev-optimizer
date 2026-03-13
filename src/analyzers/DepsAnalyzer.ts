@@ -2,6 +2,11 @@
  * Dependency Analyzer
  * Analyzes package.json for optimization opportunities
  * Integrates with knip for unused dependency detection
+ * 
+ * Modes:
+ * - Quick: knip + deprecated + duplicates (fast)
+ * - Full: + npm outdated + npm audit (slower)
+ * - Deep: + size analysis (slowest)
  */
 
 import * as fs from 'fs';
@@ -9,8 +14,22 @@ import * as path from 'path';
 import * as childProcess from 'child_process';
 import { Analyzer, AnalysisResult, Finding, Baseline, Savings, Domain } from '../types.js';
 
+export interface DepsAnalyzerOptions {
+  mode?: 'quick' | 'full' | 'deep';
+  runNpmOutdated?: boolean;
+  runNpmAudit?: boolean;
+}
+
 export class DepsAnalyzer implements Analyzer {
   name: Domain = 'deps';
+  private options: DepsAnalyzerOptions;
+
+  constructor(options: DepsAnalyzerOptions = {}) {
+    this.options = {
+      mode: 'full',
+      ...options
+    };
+  }
 
   async isApplicable(projectPath: string): Promise<boolean> {
     return fs.existsSync(path.join(projectPath, 'package.json'));
@@ -184,6 +203,18 @@ export class DepsAnalyzer implements Analyzer {
         autoFixSafe: false
       });
     }
+
+    // Finding: Deprecated packages (quick mode)
+    const deprecated = await this.checkDeprecated(packageJson);
+    findings.push(...deprecated);
+
+    // Finding: Outdated packages (full mode)
+    const outdated = await this.runNpmOutdated(projectPath);
+    findings.push(...outdated);
+
+    // Finding: Security vulnerabilities (full mode)
+    const vulnerabilities = await this.runNpmAudit(projectPath);
+    findings.push(...vulnerabilities);
 
     const savings = this.calculateSavings(findings, baseline);
 
@@ -414,5 +445,204 @@ export class DepsAnalyzer implements Analyzer {
     }
     
     return duplicates;
+  }
+
+  /**
+   * Check for deprecated packages in package.json
+   * Quick mode - no npm commands needed
+   */
+  private async checkDeprecated(packageJson: any): Promise<Finding[]> {
+    const findings: Finding[] = [];
+    const allDeps = {
+      ...packageJson.dependencies,
+      ...packageJson.devDependencies
+    };
+
+    // Known deprecated packages
+    const deprecatedPackages: Record<string, string> = {
+      'request': 'Use axios, node-fetch, or native fetch instead',
+      'left-pad': 'Use String.prototype.padStart instead',
+      'babel-eslint': 'Use @babel/eslint-parser instead',
+      'babel-preset-env': 'Use @babel/preset-env instead',
+      'tslint': 'Use ESLint instead',
+      'core-js@2': 'Use core-js@3 instead',
+      'rxjs-compat': 'Use RxJS 6+ directly',
+    };
+
+    for (const [name, version] of Object.entries(allDeps)) {
+      if (deprecatedPackages[name]) {
+        findings.push({
+          id: `deps-009-deprecated-${name}`,
+          domain: 'deps',
+          title: `Deprecated package: ${name}`,
+          description: `Package '${name}' is deprecated. ${deprecatedPackages[name]}`,
+          evidence: {
+            file: 'package.json',
+            snippet: `"${name}": "${version}"`
+          },
+          severity: 'medium',
+          confidence: 'high',
+          impact: {
+            type: 'security',
+            estimate: 'Security and maintenance risks',
+            confidence: 'high'
+          },
+          suggestedFix: {
+            type: 'modify',
+            file: 'package.json',
+            description: deprecatedPackages[name],
+            autoFixable: false
+          },
+          autoFixSafe: false
+        });
+      }
+    }
+
+    return findings;
+  }
+
+  /**
+   * Run npm outdated for version analysis
+   * Full mode - requires npm
+   */
+  private async runNpmOutdated(projectPath: string): Promise<Finding[]> {
+    if (this.options.mode === 'quick') {
+      return [];
+    }
+
+    const findings: Finding[] = [];
+
+    try {
+      const result = childProcess.execSync(
+        'npm outdated --json',
+        {
+          cwd: projectPath,
+          encoding: 'utf-8',
+          timeout: 30000,
+          stdio: ['pipe', 'pipe', 'pipe']
+        }
+      );
+
+      const outdated = JSON.parse(result);
+      
+      for (const [name, info] of Object.entries(outdated)) {
+        const pkgInfo = info as { current: string; wanted: string; latest: string };
+        
+        const currentMajor = parseInt(pkgInfo.current.split('.')[0]);
+        const latestMajor = parseInt(pkgInfo.latest.split('.')[0]);
+        const majorDiff = latestMajor - currentMajor;
+
+        findings.push({
+          id: `deps-010-outdated-${name}`,
+          domain: 'deps',
+          title: `Outdated package: ${name}`,
+          description: `Package '${name}' is ${majorDiff > 0 ? `${majorDiff} major versions` : 'versions'} behind.`,
+          evidence: {
+            file: 'package.json',
+            snippet: `"${name}": "${pkgInfo.current}" → "${pkgInfo.latest}"`,
+            metrics: { majorDiff }
+          },
+          severity: majorDiff >= 2 ? 'high' : majorDiff === 1 ? 'medium' : 'low',
+          confidence: 'high',
+          impact: {
+            type: 'security',
+            estimate: 'Potential security vulnerabilities in outdated version',
+            confidence: 'medium'
+          },
+          suggestedFix: {
+            type: 'modify',
+            file: 'package.json',
+            description: `Update: npm install ${name}@latest`,
+            autoFixable: majorDiff === 0
+          },
+          autoFixSafe: majorDiff === 0
+        });
+      }
+    } catch (error: any) {
+      // npm outdated returns exit code 1 when packages are outdated
+      try {
+        const output = error.stdout || '';
+        if (output) {
+          const outdated = JSON.parse(output);
+          for (const [name, info] of Object.entries(outdated)) {
+            const pkgInfo = info as { current: string; wanted: string; latest: string };
+            findings.push({
+              id: `deps-010-outdated-${name}`,
+              domain: 'deps',
+              title: `Outdated package: ${name}`,
+              description: `Package '${name}' has newer version available.`,
+                evidence: { file: 'package.json', snippet: `"${name}": "${pkgInfo.current}" → "${pkgInfo.latest}"` },
+              severity: 'low',
+              confidence: 'high',
+              impact: { type: 'security', estimate: 'Update for latest features', confidence: 'low' },
+              suggestedFix: { type: 'modify', file: 'package.json', description: `npm install ${name}@latest`, autoFixable: false },
+              autoFixSafe: false
+            });
+          }
+        }
+      } catch {
+        // No outdated packages or npm not available
+      }
+    }
+
+    return findings;
+  }
+
+  /**
+   * Run npm audit for security vulnerabilities
+   * Full mode - requires npm
+   */
+  private async runNpmAudit(projectPath: string): Promise<Finding[]> {
+    if (this.options.mode === 'quick') {
+      return [];
+    }
+
+    const findings: Finding[] = [];
+
+    try {
+      const result = childProcess.execSync(
+        'npm audit --json',
+        {
+          cwd: projectPath,
+          encoding: 'utf-8',
+          timeout: 30000,
+          stdio: ['pipe', 'pipe', 'pipe']
+        }
+      );
+
+      // No vulnerabilities
+      return findings;
+    } catch (error: any) {
+      // npm audit returns exit code 1 when vulnerabilities found
+      try {
+        const output = error.stdout || '';
+        if (output) {
+          const audit = JSON.parse(output);
+          if (audit.vulnerabilities) {
+            for (const [name, info] of Object.entries(audit.vulnerabilities)) {
+              const vuln = info as { name: string; severity: string; via: string[]; fixAvailable?: boolean };
+              const severity = vuln.severity === 'critical' || vuln.severity === 'high' ? 'critical' : 
+                               vuln.severity === 'moderate' ? 'high' : 'medium';
+              findings.push({
+                id: `deps-011-vuln-${name}`,
+                domain: 'deps',
+                title: `Vulnerability in ${name}: ${vuln.severity}`,
+                description: `Package '${name}' has ${vuln.severity} security vulnerability.`,
+                evidence: { file: 'package.json', snippet: `"${name}"` },
+                severity: severity as 'critical' | 'high' | 'medium' | 'low',
+                confidence: 'high',
+                impact: { type: 'security', estimate: 'Security vulnerability requires attention', confidence: 'high' },
+                suggestedFix: { type: 'modify', file: 'package.json', description: vuln.fixAvailable ? 'npm audit fix' : 'Manual review required', autoFixable: vuln.fixAvailable ? true : false },
+                autoFixSafe: false
+              });
+            }
+          }
+        }
+      } catch {
+        // npm not available or parse error
+      }
+    }
+
+    return findings;
   }
 }
