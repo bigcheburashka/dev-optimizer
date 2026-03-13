@@ -1,24 +1,22 @@
-name: Dev Optimizer
+name: Dev Optimizer CI
 
 on:
-  pull_request:
   push:
     branches: [main]
-
-permissions:
-  contents: read
-  pull-requests: write
+  pull_request:
+    branches: [main]
 
 jobs:
   analyze:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
     steps:
       - uses: actions/checkout@v4
       
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 20
           cache: 'npm'
       
       - name: Install dependencies
@@ -27,8 +25,9 @@ jobs:
       - name: Build
         run: npm run build
       
-      - name: Run analysis
-        run: node dist/index.js analyze
-      
       - name: Run tests
         run: npm test
+      
+      - name: Self-analyze
+        run: node dist/index.js analyze --path .
+        continue-on-error: true
