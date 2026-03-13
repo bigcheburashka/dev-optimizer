@@ -142,19 +142,26 @@ export async function analyzeCommand(options) {
 }
 function calculateScore(findings) {
     let score = 100;
+    // Group findings by ID to avoid double-counting same issue
+    const seen = new Set();
     for (const finding of findings) {
+        // Skip duplicates
+        if (seen.has(finding.id))
+            continue;
+        seen.add(finding.id);
+        // Reduced penalties for better UX
         switch (finding.severity) {
             case 'critical':
-                score -= 30;
+                score -= 15;
                 break;
             case 'high':
-                score -= 20;
-                break;
-            case 'medium':
                 score -= 10;
                 break;
-            case 'low':
+            case 'medium':
                 score -= 5;
+                break;
+            case 'low':
+                score -= 2;
                 break;
         }
     }

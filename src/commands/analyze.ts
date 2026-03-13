@@ -171,12 +171,20 @@ export async function analyzeCommand(options: AnalyzeOptions): Promise<void> {
 function calculateScore(findings: Finding[]): number {
   let score = 100;
   
+  // Group findings by ID to avoid double-counting same issue
+  const seen = new Set<string>();
+  
   for (const finding of findings) {
+    // Skip duplicates
+    if (seen.has(finding.id)) continue;
+    seen.add(finding.id);
+    
+    // Reduced penalties for better UX
     switch (finding.severity) {
-      case 'critical': score -= 30; break;
-      case 'high': score -= 20; break;
-      case 'medium': score -= 10; break;
-      case 'low': score -= 5; break;
+      case 'critical': score -= 15; break;
+      case 'high': score -= 10; break;
+      case 'medium': score -= 5; break;
+      case 'low': score -= 2; break;
     }
   }
   
