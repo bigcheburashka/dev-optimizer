@@ -2,223 +2,216 @@
 
 > **Positioning:** Cut CI time, dependency bloat, and Docker waste before merge.
 > **Core value:** One report, clear savings, safe fixes — not another linter.
+> **Message:** "Cut CI time, dependency bloat, and Docker waste before merge"
 
 ---
 
-## MVP Scope (4 weeks)
+## Product Stages (GPT Plan)
 
-### In Scope
+### Stage 1: CLI + GitHub Action (CURRENT)
+- ✅ CLI analyze command
+- ✅ 3 domains (Docker, Deps, CI)
+- ✅ Console + Markdown reports
+- ✅ Safe auto-fixes
+- ⏳ GitHub Action for PR comments
+
+### Stage 2: Cloud Dashboard
+- ⏳ Baseline persistence
+- ⏳ History & regression tracking
+- ⏳ Team dashboard
+- ⏳ ROI calculator ($)
+
+### Stage 3: Autofix PRs
+- ⏳ Safe-first patches
+- ⏳ Validation pipeline
+- ⏳ Bot for auto-fixes
+
+### Stage 4: Enterprise
+- ⏳ Org policies
+- ⏳ Private deployment
+- ⏳ SSO/SAML
+
+---
+
+## Current Status (2026-03-13)
+
+### ✅ Complete
+
+| Component | Tests | Status |
+|-----------|-------|--------|
+| DockerAnalyzer | 11 | ✅ Production ready |
+| CiAnalyzer | 8 | ✅ Production ready |
+| DepsAnalyzer | 11 | ✅ Production ready |
+| RepoScanner | 13 | ✅ Production ready |
+| Fix command | 12 | ✅ Production ready |
+| BaselineManager | 11 | ✅ Production ready |
+| ConsoleReporter | - | ✅ Works |
+| MarkdownReporter | - | ✅ Works |
+| **Total** | **59** | ✅ |
+
+### Git: 14 commits
+
+```
+81a8948 - Fix score calculation
+e2b8d60 - Fix BaselineManager tests
+5788877 - Add BaselineManager
+40584cd - Add demo repos
+7da01c2 - Implement fix command
+...
+```
+
+### Tested on Real Repos
+
+| Repository | Score | Findings |
+|------------|-------|----------|
+| nestjs/nest | 70/100 | 3 |
+| expressjs/express | 47/100 | 9 |
+
+---
+
+## MVP Scope (Done)
+
+### ✅ 3 Domains
 
 | Domain | Analysis | Auto-fix |
 |--------|----------|----------|
-| **CI/CD** | GitHub Actions: cache, matrix, timeout, parallelization | Add cache via setup-node |
-| **Dependencies** | Unused deps, duplicates, prod/dev classification, heavy packages | Remove unused (high confidence only) |
-| **Docker** | .dockerignore, multistage, base image, cleanup | Create .dockerignore (always safe) |
+| **CI/CD** | GitHub Actions: cache, timeout, matrix | Add cache via setup-node |
+| **Dependencies** | unused (knip), duplicates, lockfile | Remove unused (high conf) |
+| **Docker** | .dockerignore, multistage, base image | Create .dockerignore |
 
-### Out of Scope (Post-MVP)
+### ✅ CLI Commands
 
-- Bundle analyzer (use webpack-bundle-analyzer)
-- Security scanner (Snyk, Trivy owned)
-- License policy
-- Performance history
-- Dashboard/SaaS
-- GitLab CI (Phase 2)
-- Enterprise features
+| Command | Status |
+|---------|--------|
+| `analyze` | ✅ Works |
+| `analyze --type docker/deps/ci` | ✅ Works |
+| `analyze --format json/markdown` | ✅ Works |
+| `fix --dry-run` | ✅ Works |
+| `fix --safe` | ✅ Works |
+| `baseline --save` | ✅ Works |
+| `baseline --compare` | ✅ Works |
+| `baseline --history` | ✅ Works |
 
----
+### ✅ Output Formats
 
-## Architecture
-
-```
-dev-optimizer/
-├── src/
-│   ├── index.ts              # CLI entry
-│   ├── types.ts              # Finding schema (unified)
-│   │
-│   ├── analyzers/
-│   │   ├── CiAnalyzer.ts     # GitHub Actions parser
-│   │   ├── DepsAnalyzer.ts  # package.json analysis
-│   │   └── DockerAnalyzer.ts # Dockerfile analysis
-│   │
-│   ├── discovery/
-│   │   └── RepoInventory.ts  # Detect files, lockfiles
-│   │
-│   ├── scoring/
-│   │   ├── Confidence.ts     # High/Medium/Low
-│   │   └── ImpactEstimator.ts # Time/size savings
-│   │
-│   ├── fixers/
-│   │   ├── DockerignoreFixer.ts
-│   │   ├── CacheFixer.ts
-│   │   └── DepsFixer.ts
-│   │
-│   └── reporters/
-│       ├── TableReporter.ts   # Console output
-│       ├── MarkdownReporter.ts # PR comments
-│       └── JsonReporter.ts    # CI/CD integration
-│
-├── tests/
-│   ├── fixtures/              # Demo repos
-│   └── unit/                  # Per-module tests
-│
-└── docs/
-    ├── mvp-scope.md
-    ├── finding-schema.md
-    ├── demo-script.md
-    └── dod.md
-```
+| Format | Status |
+|--------|--------|
+| Console (table) | ✅ Works |
+| Markdown | ✅ Works |
+| JSON | ✅ Works |
 
 ---
 
-## Finding Schema (Unified)
+## Production Readiness Checklist
 
-```typescript
-interface Finding {
-  id: string;
-  domain: 'ci' | 'deps' | 'docker';
-  title: string;
-  description: string;
-  evidence: {
-    file?: string;
-    line?: number;
-    snippet?: string;
-    metrics?: Record<string, number>;
-  };
-  severity: 'critical' | 'high' | 'medium' | 'low';
-  confidence: 'high' | 'medium' | 'low';
-  impact: {
-    type: 'time' | 'size' | 'cost';
-    estimate: string;
-  };
-  suggestedFix: {
-    type: 'create' | 'modify' | 'delete';
-    file: string;
-    diff?: string;
-    autoFixable: boolean;
-  };
-}
-```
+### Must Have (MVP)
 
-Full schema: `docs/finding-schema.md`
+| Item | Status | Notes |
+|------|--------|-------|
+| CLI works | ✅ | All commands tested |
+| 3 domains | ✅ | Docker, Deps, CI |
+| Safe fixes | ✅ | .dockerignore, cache |
+| Reports | ✅ | Console + MD + JSON |
+| Tests | ✅ | 59 passing |
+| Real repo testing | ✅ | nest, express |
+| Documentation | ✅ | README + docs/ |
+| Score calculation | ✅ | Fixed penalties |
+| Baseline persistence | ✅ | JSON storage |
 
----
+### Should Have (v1.1)
 
-## Timeline (4 weeks)
+| Item | Status | Notes |
+|------|--------|-------|
+| GitHub Action | ❌ | PR comments |
+| npm publish | ⏸️ | Deferred |
+| More findings | ❌ | outdated, audit, size |
 
-### Week 1: Foundation (CURRENT)
-- [x] Architecture design
-- [x] Finding schema
-- [x] CLI skeleton
-- [x] Docker analyzer (basic)
-- [x] CI analyzer (basic)
-- [ ] Repo inventory
-- [ ] Baseline report
+### Nice to Have (v2)
 
-### Week 2: Analyzers
-- [x] Docker analyzer (partial)
-- [ ] Dependency analyzer with confidence
-- [x] CI analyzer (GitHub Actions)
-- [ ] Markdown reporter
-- [ ] Top findings ranking
-
-### Week 3: Fixes & Ranking
-- [ ] Safe fix engine
-- [ ] Dockerignore fixer
-- [ ] Cache fixer
-- [ ] Scoring/ranking
-- [ ] Demo repos setup
-
-### Week 4: Polish
-- [ ] Bug fixes
-- [ ] Documentation
-- [ ] Demo script
-- [ ] Packaging (npm)
+| Item | Status | Notes |
+|------|--------|-------|
+| Dashboard | ❌ | SaaS |
+| ROI calculator | ❌ | $ estimates |
+| Team features | ❌ | Multi-repo |
 
 ---
 
-## DoD per Week
+## Known Gaps & Limitations
 
-### Week 1 DoD
-- [ ] `dev-optimizer analyze` runs on any repo
-- [ ] Detects 3 domains (ci, deps, docker)
-- [ ] Returns unified findings
-- [ ] Has test fixtures for each domain
+### Current Gaps
 
-### Week 2 DoD
-- [ ] All 3 analyzers produce findings
-- [ ] Markdown report is human-readable
-- [ ] Top findings ranked correctly
+| Gap | Impact | Solution |
+|-----|--------|----------|
+| Unused deps in libraries | Knip misses exports used externally | Add `--is-library` flag |
+| Outdated packages | Not checked | Add `npm outdated` check |
+| Security vulnerabilities | Not checked | Add `npm audit` integration |
+| Large dependencies | Not analyzed | Add bundlesize estimate |
+| Matrix optimization | Not analyzed | Add parallelization check |
 
-### Week 3 DoD
-- [ ] `fix --safe` applies safe fixes
-- [ ] `fix --dry-run` shows diffs
-- [ ] Confidence model implemented
+### Current Limitations
 
-### Week 4 DoD
-- [ ] Demo runs in < 5 minutes
-- [ ] README is complete
-- [ ] Published to npm
+1. **GitHub Actions only** — GitLab CI in Stage 2
+2. **JS/TS only** — Python, Go in Stage 3
+3. **Estimates not precise** — ROI estimates, not promises
+4. **Library detection** — Knip limitation for library exports
 
 ---
 
-## Status Report Format
+## Monetization Model
 
-After each work session:
-
-```
-### 1. Что сделано
-- [items]
-
-### 2. Что работает
-- [runnable items]
-
-### 3. Что не сделано
-- [explicit list]
-
-### 4. Риски / ограничения
-- [constraints]
-
-### 5. Следующий шаг
-- [single next step]
-```
+| Tier | Price | Features |
+|------|-------|----------|
+| **Free** | $0 | CLI, local analysis, unlimited repos |
+| **Pro** | $19/mo | PR comments, history, 10 repos |
+| **Team** | $49/mo | Org policies, unlimited repos, Slack |
 
 ---
 
-## Success Metrics (MVP)
+## Next Steps (Priority Order)
 
-| Metric | Target |
-|--------|---------|
-| Analysis time | < 30 seconds |
-| Findings per repo | 5-10 |
-| False positive rate | < 20% |
-| Safe fix accuracy | > 95% |
-| Demo time | < 5 minutes |
+### 1. Gap Fixes (This Week)
 
----
+| Task | Impact | Effort |
+|------|--------|--------|
+| Add `npm outdated` check | Medium | Low |
+| Add `npm audit` integration | Medium | Low |
+| Fix score formula | High | Done |
+| Test on more repos | Medium | Low |
 
-## Test Repositories
+### 2. GitHub Action (Next Week)
 
-| Repo | Type | Issues covered |
-|------|------|----------------|
-| demo-service | Node.js microservice | Docker + CI basics |
-| demo-frontend | React/Vite app | Dependencies |
-| demo-fullstack | Monorepo | All domains |
+| Task | Impact | Effort |
+|------|--------|--------|
+| Create .github/workflows/action.yml | High | Low |
+| PR comment generation | High | Medium |
+| Baseline comparison in PR | Medium | Medium |
 
----
+### 3. Polish (Post-Action)
 
-## Next Step
-
-**Week 1 continues:**
-1. Complete `RepoInventory.ts` — detect package.json, Dockerfile, CI configs
-2. Implement unified `Finding` type in `types.ts`
-3. Add baseline section to report
+| Task | Priority |
+|------|----------|
+| Improve error messages | Medium |
+| Add --verbose flag | Low |
+| Add --quiet flag | Low |
+| Better progress output | Medium |
 
 ---
 
 ## References
 
-- `docs/brief.md` — Agent brief
+- `docs/brief.md` — What we build, what NOT to build
 - `docs/dod.md` — Definition of Done
 - `docs/finding-schema.md` — Finding model
 - `docs/mvp-scope.md` — Scope boundaries
 - `docs/demo-script.md` — Demo preparation
+- `docs/TODO.md` — Monetization roadmap
+
+---
+
+## Repository
+
+Private: `https://github.com/bigcheburashka/dev-optimizer`
+
+**Branch:** main
+**Commits:** 14
+**Tests:** 59 passing
