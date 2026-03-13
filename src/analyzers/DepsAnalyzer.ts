@@ -1,11 +1,12 @@
 /**
  * Dependency Analyzer
  * Analyzes package.json for optimization opportunities
- * Returns unified Finding[] format
+ * Integrates with knip for unused dependency detection
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as childProcess from 'child_process';
 import { Analyzer, AnalysisResult, Finding, Baseline, Savings, Domain } from '../types.js';
 
 export class DepsAnalyzer implements Analyzer {
@@ -22,79 +23,60 @@ export class DepsAnalyzer implements Analyzer {
     // Parse package.json
     const packageJson = await this.readPackageJson(projectPath);
     const packageLockExists = fs.existsSync(path.join(projectPath, 'package-lock.json'));
+    const yarnLockExists = fs.existsSync(path.join(projectPath, 'yarn.lock'));
+    const pnpmLockExists = fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'));
 
-    // Finding: Unused dependencies
-    const unusedDeps = await this.findUnusedDeps(projectPath);
-    for (const dep of unusedDeps.slice(0, 10)) { // Limit to 10 findings
-      findings.push({
-        id: `deps-001-${dep.name}`,
-        domain: 'deps',
-        title: `Unused dependency: ${dep.name}`,
-        description: `Package '${dep.name}' is in dependencies but never imported.`,
-        evidence: {
-          file: 'package.json',
-          snippet: `"${dep.name}": "${dep.version}"`,
-          metrics: {
-            packageSizeKB: dep.size,
-            importCount: 0
-          }
-        },
-        severity: 'medium',
-        confidence: dep.confidence,
-        impact: {
-          type: 'size',
-          estimate: `Save ${dep.size} KB in node_modules`,
-          confidence: dep.confidence
-        },
-        suggestedFix: {
-          type: 'modify',
-          file: 'package.json',
-          description: `Remove ${dep.name} from dependencies`,
-          diff: `-    "${dep.name}": "${dep.version}",`,
-          autoFixable: dep.confidence === 'high'
-        },
-        autoFixSafe: dep.confidence === 'high'
-      });
+    // Run knip for unused dependencies
+    const knipResult = await this.runKnip(projectPath);
+    
+    if (knipResult) {
+      // Process unused dependencies
+      for (const dep of knipResult.dependencies || []) {
+        findings.push(this.createUnusedDepFinding(dep, packageJson));
+      }
+
+      // Process unused dev dependencies
+      for (const dep of knipResult.devDependencies || []) {
+        findings.push(this.createUnusedDepFinding(dep, packageJson, true));
+      }
+
+      // Process unused exports
+      for (const item of knipResult.exports || []) {
+        if (item.type === 'unused') {
+          findings.push({
+            id: `deps-006-${item.name}`,
+            domain: 'deps',
+            title: `Unused export: ${item.name}`,
+            description: `Export '${item.name}' is defined but never used.`,
+            evidence: {
+              file: item.file,
+              line: item.line
+            },
+            severity: 'low',
+            confidence: 'high',
+            impact: {
+              type: 'size',
+              estimate: 'Reduce bundle size by removing dead code',
+              confidence: 'medium'
+            },
+            suggestedFix: {
+              type: 'modify',
+              file: item.file || 'unknown',
+              description: 'Remove unused export',
+              autoFixable: false
+            },
+            autoFixSafe: false
+          });
+        }
+      }
     }
 
-    // Finding: Duplicate dependencies
-    const duplicates = await this.findDuplicates(projectPath);
-    for (const dup of duplicates) {
-      findings.push({
-        id: `deps-002-${dup.name}`,
-        domain: 'deps',
-        title: `Duplicate dependency: ${dup.name}`,
-        description: `Multiple versions of '${dup.name}' detected: ${dup.versions.join(', ')}.`,
-        evidence: {
-          file: 'package-lock.json',
-          metrics: {
-            versionCount: dup.versions.length,
-            extraSizeKB: dup.extraSize
-          }
-        },
-        severity: 'medium',
-        confidence: 'high',
-        impact: {
-          type: 'size',
-          estimate: `Save ${dup.extraSize} KB by deduplicating`,
-          confidence: 'high'
-        },
-        suggestedFix: {
-          type: 'modify',
-          file: 'package.json',
-          description: 'Run npm dedupe or fix version constraints',
-          autoFixable: false
-        },
-        autoFixSafe: false
-      });
-    }
-
-    // Finding: Missing package-lock.json
-    if (!packageLockExists) {
+    // Finding: Missing lockfile
+    if (!packageLockExists && !yarnLockExists && !pnpmLockExists) {
       findings.push({
         id: 'deps-003-lockfile',
         domain: 'deps',
-        title: 'Missing package-lock.json',
+        title: 'Missing lockfile',
         description: 'No lockfile found. This can lead to inconsistent installs across environments.',
         evidence: {},
         severity: 'medium',
@@ -114,59 +96,89 @@ export class DepsAnalyzer implements Analyzer {
       });
     }
 
-    // Finding: Large packages (heuristic)
-    const largePackages = await this.findLargePackages(projectPath);
-    for (const pkg of largePackages) {
+    // Finding: Large packages (based on baseline)
+    if (baseline.nodeModulesSizeMB && baseline.nodeModulesSizeMB > 200) {
       findings.push({
-        id: `deps-004-${pkg.name}`,
+        id: 'deps-007-large-modules',
         domain: 'deps',
-        title: `Large package: ${pkg.name} (${pkg.size} KB)`,
-        description: `Package '${pkg.name}' is large. Consider alternatives: ${pkg.alternatives.join(', ')}.`,
+        title: `Large node_modules: ${baseline.nodeModulesSizeMB} MB`,
+        description: 'node_modules exceeds 200 MB. Consider analyzing dependencies.',
         evidence: {
           metrics: {
-            packageSizeKB: pkg.size
+            sizeMB: baseline.nodeModulesSizeMB
           }
         },
-        severity: 'low',
-        confidence: 'low',
+        severity: 'medium',
+        confidence: 'high',
         impact: {
           type: 'size',
-          estimate: `Consider smaller alternatives`,
+          estimate: `Potential savings: ${Math.round(baseline.nodeModulesSizeMB * 0.3)} MB`,
           confidence: 'low'
         },
         suggestedFix: {
           type: 'modify',
           file: 'package.json',
-          description: `Consider replacing ${pkg.name} with a smaller alternative`,
+          description: 'Analyze dependencies with knip or depcheck',
           autoFixable: false
         },
         autoFixSafe: false
       });
     }
 
-    // Finding: Prod vs Dev classification (heuristic)
-    const misclassified = this.findMisclassified(packageJson);
-    for (const pkg of misclassified) {
+    // Finding: Many dependencies
+    if (baseline.dependencyCount > 50) {
       findings.push({
-        id: `deps-005-${pkg.name}`,
+        id: 'deps-008-many-deps',
         domain: 'deps',
-        title: `Misclassified dependency: ${pkg.name}`,
-        description: `Package '${pkg.name}' appears to be ${pkg.suggestedType} but is in ${pkg.currentType}.`,
+        title: `Many dependencies: ${baseline.dependencyCount}`,
+        description: 'Project has more than 50 dependencies. Consider reducing.',
         evidence: {
-          file: 'package.json',
-          snippet: `"${pkg.name}": "${pkg.version}"`
+          metrics: {
+            count: baseline.dependencyCount
+          }
         },
-        severity: 'medium',
-        confidence: 'medium',
+        severity: 'low',
+        confidence: 'high',
         impact: {
           type: 'size',
-          estimate: 'Reduce production bundle size',
+          estimate: 'Larger install time and bundle size',
           confidence: 'medium'
         },
         suggestedFix: {
           type: 'modify',
           file: 'package.json',
-          description: `Move ${pkg.name} to ${pkg.suggestedType}`,
+          description: 'Review and remove unnecessary dependencies',
+          autoFixable: false
+        },
+        autoFixSafe: false
+      });
+    }
+
+    // Finding: Duplicates (simplified check)
+    const duplicates = await this.findDuplicates(projectPath, packageJson);
+    for (const dup of duplicates) {
+      findings.push({
+        id: `deps-002-${dup.name}`,
+        domain: 'deps',
+        title: `Duplicate dependency: ${dup.name}`,
+        description: `Package ${dup.name} appears multiple times.`,
+        evidence: {
+          snippet: `"${dup.name}": "${dup.version}"`,
+          metrics: {
+            count: dup.count
+          }
+        },
+        severity: 'medium',
+        confidence: 'high',
+        impact: {
+          type: 'size',
+          estimate: 'Deduplicate to reduce size',
+          confidence: 'medium'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: 'package.json',
+          description: 'Remove duplicate entry',
           autoFixable: false
         },
         autoFixSafe: false
@@ -184,6 +196,105 @@ export class DepsAnalyzer implements Analyzer {
     };
   }
 
+  /**
+   * Run knip and parse results
+   */
+  private async runKnip(projectPath: string): Promise<{
+    dependencies?: string[];
+    devDependencies?: string[];
+    exports?: Array<{ name: string; file?: string; line?: number; type?: string }>;
+  } | null> {
+    try {
+      // Run knip with JSON output
+      const result = childProcess.execSync(
+        'npx knip --no-progress --reporter json',
+        {
+          cwd: projectPath,
+          encoding: 'utf-8',
+          timeout: 60000,
+          stdio: ['pipe', 'pipe', 'pipe']
+        }
+      );
+
+      // Parse knip output
+      const knipData = JSON.parse(result);
+      
+      return {
+        dependencies: knipData.issues?.dependencies || [],
+        devDependencies: knipData.issues?.devDependencies || [],
+        exports: (knipData.issues?.exports || []).map((e: any) => ({
+          name: e.name || e.identifier,
+          file: e.file,
+          line: e.line,
+          type: 'unused'
+        }))
+      };
+    } catch (error: any) {
+      // knip returns non-zero exit code when issues are found
+      // Try to parse stderr for JSON
+      try {
+        const stderr = error.stderr || error.stdout || '';
+        // Find JSON in output
+        const jsonMatch = stderr.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const knipData = JSON.parse(jsonMatch[0]);
+          return {
+            dependencies: knipData.issues?.dependencies || knipData.dependencies || [],
+            devDependencies: knipData.issues?.devDependencies || knipData.devDependencies || [],
+            exports: []
+          };
+        }
+      } catch {
+        // knip not available or parse error
+      }
+      
+      // Return null if knip fails
+      return null;
+    }
+  }
+
+  /**
+   * Create finding for unused dependency
+   */
+  private createUnusedDepFinding(
+    depName: string, 
+    packageJson: any, 
+    isDev: boolean = false
+  ): Finding {
+    const version = (packageJson.dependencies || {})[depName] || 
+                    (packageJson.devDependencies || {})[depName] ||
+                    'unknown';
+
+    return {
+      id: `deps-001-${depName}`,
+      domain: 'deps',
+      title: `Unused ${isDev ? 'dev ' : ''}dependency: ${depName}`,
+      description: `Package '${depName}' is in ${isDev ? 'devDependencies' : 'dependencies'} but never imported.`,
+      evidence: {
+        file: 'package.json',
+        snippet: `"${depName}": "${version}"`,
+        metrics: {
+          unusedCount: 1
+        }
+      },
+      severity: 'medium',
+      confidence: 'high',
+      impact: {
+        type: 'size',
+        estimate: `Remove to reduce node_modules size`,
+        confidence: 'high'
+      },
+      suggestedFix: {
+        type: 'modify',
+        file: 'package.json',
+        description: `Remove ${depName} from ${isDev ? 'devDependencies' : 'dependencies'}`,
+        diff: `-    "${depName}": "${version}",`,
+        autoFixable: true
+      },
+      autoFixSafe: true
+    };
+  }
+
   private async collectBaseline(projectPath: string): Promise<Baseline> {
     const packageJson = await this.readPackageJson(projectPath);
     const deps = Object.keys(packageJson.dependencies || {}).length;
@@ -196,7 +307,7 @@ export class DepsAnalyzer implements Analyzer {
     }
 
     return {
-      projectType: 'npm',
+      projectType: this.detectProjectType(packageJson),
       hasPackageJson: true,
       hasDockerfile: fs.existsSync(path.join(projectPath, 'Dockerfile')),
       hasCi: fs.existsSync(path.join(projectPath, '.github/workflows')) ||
@@ -204,6 +315,22 @@ export class DepsAnalyzer implements Analyzer {
       dependencyCount: deps + devDeps,
       nodeModulesSizeMB: nodeModulesSize
     };
+  }
+
+  private detectProjectType(pkg: any): string {
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+
+    if (deps.next || deps['next.js']) return 'nextjs';
+    if (deps.react) return 'react';
+    if (deps.vue) return 'vue';
+    if (deps.angular || deps['@angular/core']) return 'angular';
+    if (deps.svelte) return 'svelte';
+    if (deps.express || deps.fastify || deps.koa) return 'nodejs-backend';
+    if (deps.nestjs || deps['@nestjs/core']) return 'nestjs';
+    if (deps.typescript) return 'typescript';
+    if (deps['react-native']) return 'react-native';
+
+    return 'nodejs';
   }
 
   private calculateScore(findings: Finding[]): number {
@@ -222,19 +349,27 @@ export class DepsAnalyzer implements Analyzer {
   }
 
   private calculateSavings(findings: Finding[], baseline: Baseline): Savings {
-    let sizeKB = 0;
+    let sizeMB = 0;
 
-    for (const finding of findings) {
-      if (finding.impact.type === 'size' && finding.evidence.metrics?.packageSizeKB) {
-        sizeKB += finding.evidence.metrics.packageSizeKB;
-      }
+    // Estimate savings from unused deps
+    const unusedCount = findings.filter(f => f.id.startsWith('deps-001')).length;
+    sizeMB += unusedCount * 5; // ~5MB per unused dep on average
+
+    // Estimate savings from duplicate removal
+    const dupCount = findings.filter(f => f.id.startsWith('deps-002')).length;
+    sizeMB += dupCount * 2;
+
+    // Estimate savings from large modules
+    const largeFinding = findings.find(f => f.id === 'deps-007-large-modules');
+    if (largeFinding && baseline.nodeModulesSizeMB) {
+      sizeMB += Math.round(baseline.nodeModulesSizeMB * 0.2); // Assume 20% savings
     }
 
     return {
       timeSeconds: 0,
-      sizeMB: Math.round(sizeKB / 1024),
+      sizeMB: Math.round(sizeMB),
       percentImprovement: baseline.nodeModulesSizeMB ? 
-        Math.round((sizeKB / 1024) / baseline.nodeModulesSizeMB * 100) : 0
+        Math.round((sizeMB / baseline.nodeModulesSizeMB) * 100) : 0
     };
   }
 
@@ -261,30 +396,23 @@ export class DepsAnalyzer implements Analyzer {
     return Math.round(size / (1024 * 1024)); // MB
   }
 
-  private async findUnusedDeps(projectPath: string): Promise<{ name: string; version: string; size: number; confidence: 'high' | 'medium' | 'low' }[]> {
-    // This would integrate with depcheck or knip
-    // Simplified implementation
-    return [];
-  }
-
-  private async findDuplicates(projectPath: string): Promise<{ name: string; versions: string[]; extraSize: number }[]> {
-    // Simplified implementation
-    return [];
-  }
-
-  private async findLargePackages(projectPath: string): Promise<{ name: string; size: number; alternatives: string[] }[]> {
-    const largePackages: Record<string, { alternatives: string[] }> = {
-      'moment': { alternatives: ['date-fns', 'dayjs'] },
-      'lodash': { alternatives: ['lodash-es', 'native methods'] },
-      '@babel/core': { alternatives: ['swc', 'esbuild'] }
-    };
-
-    // Simplified - would check actual sizes
-    return [];
-  }
-
-  private findMisclassified(packageJson: any): { name: string; version: string; currentType: string; suggestedType: string }[] {
-    // Simplified - would check import patterns
-    return [];
+  private async findDuplicates(projectPath: string, packageJson: any): Promise<Array<{ name: string; version: string; count: number }>> {
+    const duplicates: Array<{ name: string; version: string; count: number }> = [];
+    
+    // Check if same package appears in both deps and devDeps
+    const deps = Object.keys(packageJson.dependencies || {});
+    const devDeps = Object.keys(packageJson.devDependencies || {});
+    
+    for (const dep of deps) {
+      if (devDeps.includes(dep)) {
+        duplicates.push({
+          name: dep,
+          version: packageJson.dependencies[dep],
+          count: 2
+        });
+      }
+    }
+    
+    return duplicates;
   }
 }
