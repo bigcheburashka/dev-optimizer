@@ -229,10 +229,40 @@ dev-optimizer baseline --history         # View history
 
 ---
 
+## Dogfooding Results (2026-03-13)
+
+### Before
+
+| Metric | Value |
+|--------|-------|
+| Score | 72/100 |
+| CI findings | 5 |
+| Deps findings | 6 |
+
+### After
+
+| Metric | Value |
+|--------|-------|
+| Score | 81/100 (+9) |
+| CI findings | 2 (-3) |
+| Deps findings | 6 |
+| Vulnerabilities | 0 |
+
+### Fixes Applied
+
+| Fix | Impact |
+|-----|--------|
+| Added timeout-minutes | +3 points |
+| Added matrix strategy | +6 points |
+| npm audit fix | 0 vulnerabilities |
+
+---
+
 ## Repository
 
 **GitHub:** `https://github.com/bigcheburashka/dev-optimizer` (private)
 **Branch:** main
-**Commits:** 22
+**Commits:** 28
 **Tests:** 59 passing
 **License:** MIT
+**Dogfooding:** ✅ Score improved from 72 to 81
