@@ -5,6 +5,7 @@
 import { FullReport } from '../types.js';
 export declare class ConsoleReporter {
     format(report: FullReport): string;
+    private groupVulnerabilities;
     private formatFinding;
     private formatFindingsList;
     private getScoreColor;

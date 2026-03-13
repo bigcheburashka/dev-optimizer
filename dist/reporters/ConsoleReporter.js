@@ -12,9 +12,15 @@ export class ConsoleReporter {
         lines.push(chalk.gray(`Path: ${report.path}`));
         lines.push(chalk.gray(`Timestamp: ${report.timestamp}`));
         lines.push('');
-        // Score
-        const scoreColor = this.getScoreColor(report.score);
-        lines.push(chalk.bold('Score: ') + scoreColor(`${report.score}/100`));
+        // Group vulnerabilities early
+        const { vulnerabilities, otherFindings } = this.groupVulnerabilities(report.findings);
+        // Score (cap minimum when vulnerabilities found)
+        let displayScore = report.score;
+        if (vulnerabilities.count > 0 && report.score < 10) {
+            displayScore = Math.max(10, 35 - vulnerabilities.count);
+        }
+        const scoreColor = this.getScoreColor(displayScore);
+        lines.push(chalk.bold('Score: ') + scoreColor(`${displayScore}/100`));
         lines.push('');
         // Baseline
         lines.push(chalk.bold('📊 Baseline'));
@@ -24,55 +30,77 @@ export class ConsoleReporter {
         lines.push(`Docker: ${report.baseline.hasDockerfile ? '✅' : '❌'}`);
         lines.push(`CI/CD: ${report.baseline.hasCi ? '✅' : '❌'}`);
         lines.push('');
-        // Top Findings
-        if (report.topFindings.length > 0) {
-            lines.push(chalk.bold('🔴 Top Findings'));
+        // Display vulnerability summary if any
+        if (vulnerabilities.count > 0) {
+            lines.push(chalk.bold('🔐 Security Vulnerabilities'));
             lines.push(chalk.gray('─'.repeat(40)));
-            for (const finding of report.topFindings.slice(0, 5)) {
+            lines.push(chalk.red(`Found ${vulnerabilities.count} vulnerabilities:`));
+            if (vulnerabilities.critical > 0)
+                lines.push(chalk.red(`  • Critical: ${vulnerabilities.critical}`));
+            if (vulnerabilities.high > 0)
+                lines.push(chalk.red(`  • High: ${vulnerabilities.high}`));
+            if (vulnerabilities.moderate > 0)
+                lines.push(chalk.yellow(`  • Moderate: ${vulnerabilities.moderate}`));
+            if (vulnerabilities.low > 0)
+                lines.push(chalk.gray(`  • Low: ${vulnerabilities.low}`));
+            lines.push(chalk.gray(`  Run: npm audit fix`));
+            lines.push('');
+        }
+        // Top Findings (excluding grouped vulnerabilities)
+        const topFindings = otherFindings
+            .filter(f => f.severity === 'critical' || f.severity === 'high')
+            .slice(0, 5);
+        if (topFindings.length > 0) {
+            lines.push(chalk.bold('🔴 Top Priority Issues'));
+            lines.push(chalk.gray('─'.repeat(40)));
+            for (const finding of topFindings) {
                 lines.push(this.formatFinding(finding));
             }
         }
-        // Quick Wins
-        if (report.quickWins.length > 0) {
+        // Quick Wins (unique, from otherFindings)
+        const quickWins = otherFindings
+            .filter(f => f.autoFixSafe || f.suggestedFix.autoFixable)
+            .slice(0, 5);
+        if (quickWins.length > 0) {
             lines.push('');
             lines.push(chalk.bold('💡 Quick Wins (Auto-fixable)'));
             lines.push(chalk.gray('─'.repeat(40)));
-            for (const finding of report.quickWins) {
+            for (const finding of quickWins) {
                 lines.push(chalk.green(`✅ ${finding.title}`));
                 lines.push(chalk.gray(`   Impact: ${finding.impact.estimate}`));
                 lines.push(chalk.gray(`   Fix: ${finding.suggestedFix.description}`));
             }
         }
-        // Manual Review
-        if (report.manualReview.length > 0) {
-            lines.push('');
-            lines.push(chalk.bold('⚠️  Requires Manual Review'));
-            lines.push(chalk.gray('─'.repeat(40)));
-            for (const finding of report.manualReview) {
-                lines.push(this.formatFinding(finding, 'yellow'));
-            }
-        }
-        // All Findings by Domain
+        // All Findings by Domain (excluding grouped vulnerabilities)
         lines.push('');
         lines.push(chalk.bold('📋 All Findings'));
         lines.push(chalk.gray('─'.repeat(40)));
-        const dockerFindings = report.findings.filter(f => f.domain === 'docker');
-        const ciFindings = report.findings.filter(f => f.domain === 'ci');
-        const depsFindings = report.findings.filter(f => f.domain === 'deps');
+        const dockerFindings = otherFindings.filter(f => f.domain === 'docker');
+        const ciFindings = otherFindings.filter(f => f.domain === 'ci');
+        const depsFindings = otherFindings.filter(f => f.domain === 'deps' && !f.id.includes('vuln'));
         if (dockerFindings.length > 0) {
             lines.push('');
             lines.push(chalk.cyan('🐳 Docker'));
-            lines.push(this.formatFindingsList(dockerFindings));
+            lines.push(this.formatFindingsList(dockerFindings.slice(0, 10)));
+            if (dockerFindings.length > 10) {
+                lines.push(chalk.gray(`  ... and ${dockerFindings.length - 10} more`));
+            }
         }
         if (ciFindings.length > 0) {
             lines.push('');
             lines.push(chalk.cyan('🔄 CI/CD'));
-            lines.push(this.formatFindingsList(ciFindings));
+            lines.push(this.formatFindingsList(ciFindings.slice(0, 10)));
+            if (ciFindings.length > 10) {
+                lines.push(chalk.gray(`  ... and ${ciFindings.length - 10} more`));
+            }
         }
         if (depsFindings.length > 0) {
             lines.push('');
             lines.push(chalk.cyan('📦 Dependencies'));
-            lines.push(this.formatFindingsList(depsFindings));
+            lines.push(this.formatFindingsList(depsFindings.slice(0, 10)));
+            if (depsFindings.length > 10) {
+                lines.push(chalk.gray(`  ... and ${depsFindings.length - 10} more`));
+            }
         }
         // Savings
         lines.push('');
@@ -89,6 +117,18 @@ export class ConsoleReporter {
         }
         lines.push('');
         return lines.join('\n');
+    }
+    groupVulnerabilities(findings) {
+        const vulnFindings = findings.filter(f => f.id.includes('vuln'));
+        const otherFindings = findings.filter(f => !f.id.includes('vuln'));
+        const vulnerabilities = {
+            count: vulnFindings.length,
+            critical: vulnFindings.filter(f => f.severity === 'critical').length,
+            high: vulnFindings.filter(f => f.severity === 'high').length,
+            moderate: vulnFindings.filter(f => f.severity === 'medium').length,
+            low: vulnFindings.filter(f => f.severity === 'low').length
+        };
+        return { vulnerabilities, otherFindings };
     }
     formatFinding(finding, defaultColor = 'white') {
         const lines = [];
