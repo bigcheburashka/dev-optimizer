@@ -219,6 +219,24 @@ export class CiAnalyzer implements Analyzer {
       });
     }
 
+    // Finding: Artifact caching optimization
+    const artifactFinding = this.checkArtifactCaching(workflow, fileName);
+    if (artifactFinding) {
+      findings.push(artifactFinding);
+    }
+
+    // Finding: Self-hosted runners opportunity
+    const runnerFinding = this.checkSelfHostedRunners(workflow, fileName);
+    if (runnerFinding) {
+      findings.push(runnerFinding);
+    }
+
+    // Finding: Duplicate jobs
+    const duplicateFinding = this.checkDuplicateJobs(workflow, fileName);
+    if (duplicateFinding) {
+      findings.push(duplicateFinding);
+    }
+
     return findings;
   }
 
@@ -352,15 +370,167 @@ export class CiAnalyzer implements Analyzer {
     return true;
   }
 
+  /**
+   * Check for artifact caching optimization
+   */
+  private checkArtifactCaching(workflow: any, fileName: string): Finding | null {
+    const jobs = workflow.jobs || {};
+    
+    for (const [jobName, job] of Object.entries(jobs)) {
+      const steps = (job as any)?.steps || [];
+      
+      // Check if using upload/download artifact without caching
+      const hasUploadArtifact = steps.some((s: any) => 
+        s.uses?.includes('upload-artifact') || s.uses?.includes('actions/upload-artifact')
+      );
+      
+      if (hasUploadArtifact) {
+        // Check for artifact retention optimization
+        const hasRetention = steps.some((s: any) => 
+          s.with?.retention_days || s.with?.['retention-days']
+        );
+        
+        if (!hasRetention) {
+          return {
+            id: `ci-006-${fileName}`,
+            domain: 'ci',
+            title: `Artifact retention not optimized in ${fileName}`,
+            description: 'Artifacts without retention settings use default 90 days, increasing storage costs.',
+            evidence: { file: fileName },
+            severity: 'low',
+            confidence: 'medium',
+            impact: {
+              type: 'cost',
+              estimate: 'Reduce storage costs with shorter retention',
+              confidence: 'low'
+            },
+            suggestedFix: {
+              type: 'modify',
+              file: `.github/workflows/${fileName}`,
+              description: 'Add retention-days to upload-artifact step',
+              autoFixable: false
+            },
+            autoFixSafe: false
+          };
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * Check for self-hosted runners opportunity
+   */
+  private checkSelfHostedRunners(workflow: any, fileName: string): Finding | null {
+    const jobs = workflow.jobs || {};
+    
+    for (const [jobName, job] of Object.entries(jobs)) {
+      const runsOn = (job as any)?.['runs-on'] || '';
+      
+      // Check if using expensive GitHub-hosted runners for long jobs
+      if (typeof runsOn === 'string' && runsOn.includes('ubuntu')) {
+        const steps = (job as any)?.steps || [];
+        const stepCount = steps.length;
+        
+        // Estimate job complexity by step count
+        if (stepCount > 5) {
+          return {
+            id: `ci-007-${fileName}`,
+            domain: 'ci',
+            title: `Consider self-hosted runners for ${fileName}`,
+            description: 'Long-running jobs on GitHub-hosted runners can be expensive. Consider self-hosted runners for cost optimization.',
+            evidence: { file: fileName, metrics: { stepCount } },
+            severity: 'low',
+            confidence: 'low',
+            impact: {
+              type: 'cost',
+              estimate: 'Self-hosted runners can save 50-80% on CI costs',
+              confidence: 'low'
+            },
+            suggestedFix: {
+              type: 'modify',
+              file: `.github/workflows/${fileName}`,
+              description: 'Consider self-hosted runners for long-running jobs',
+              autoFixable: false
+            },
+            autoFixSafe: false
+          };
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * Check for duplicate job detection
+   */
+  private checkDuplicateJobs(workflow: any, fileName: string): Finding | null {
+    const jobs = workflow.jobs || {};
+    const jobSteps: Record<string, string[]> = {};
+    
+    for (const [jobName, job] of Object.entries(jobs)) {
+      const steps = (job as any)?.steps || [];
+      const stepNames = steps.map((s: any) => s.name || s.run || s.uses || '').filter(Boolean);
+      jobSteps[jobName] = stepNames;
+    }
+    
+    // Check for similar jobs
+    const jobNames = Object.keys(jobSteps);
+    for (let i = 0; i < jobNames.length; i++) {
+      for (let j = i + 1; j < jobNames.length; j++) {
+        const steps1 = jobSteps[jobNames[i]];
+        const steps2 = jobSteps[jobNames[j]];
+        
+        // Calculate similarity
+        const intersection = steps1.filter(s => steps2.includes(s));
+        const similarity = intersection.length / Math.max(steps1.length, steps2.length);
+        
+        if (similarity > 0.7 && steps1.length > 2) {
+          return {
+            id: `ci-008-${fileName}`,
+            domain: 'ci',
+            title: `Duplicate jobs detected in ${fileName}`,
+            description: `Jobs '${jobNames[i]}' and '${jobNames[j]}' have ${Math.round(similarity * 100)}% similar steps. Consider combining or using reusable workflows.`,
+            evidence: { file: fileName },
+            severity: 'medium',
+            confidence: 'medium',
+            impact: {
+              type: 'cost',
+              estimate: 'Consolidate to reduce CI minutes and maintenance',
+              confidence: 'medium'
+            },
+            suggestedFix: {
+              type: 'modify',
+              file: `.github/workflows/${fileName}`,
+              description: 'Consider using reusable workflows or combining similar jobs',
+              autoFixable: false
+            },
+            autoFixSafe: false
+          };
+        }
+      }
+    }
+    
+    return null;
+  }
+
   private calculateScore(findings: Finding[]): number {
     let score = 100;
     
+    const seen = new Set<string>();
+    
     for (const finding of findings) {
+      // Deduplicate by ID
+      if (seen.has(finding.id)) continue;
+      seen.add(finding.id);
+      
       switch (finding.severity) {
-        case 'critical': score -= 30; break;
-        case 'high': score -= 20; break;
-        case 'medium': score -= 10; break;
-        case 'low': score -= 5; break;
+        case 'critical': score -= 15; break;
+        case 'high': score -= 10; break;
+        case 'medium': score -= 5; break;
+        case 'low': score -= 2; break;
       }
     }
     

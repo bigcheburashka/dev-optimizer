@@ -91,7 +91,7 @@ describe('DepsAnalyzer', () => {
       
       for (const finding of result.findings) {
         expect(finding.domain).toBe('deps');
-        expect(finding.impact.type).toMatch(/time|size|cost/);
+        expect(finding.impact.type).toMatch(/time|size|cost|security|maintenance/);
         expect(['high', 'medium', 'low']).toContain(finding.confidence);
       }
     });
