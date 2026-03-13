@@ -1,212 +1,190 @@
 # Demo Script
 
-## Цель
-
-За 5 минут показать ценность Dev Optimizer на реальном репозитории.
-
----
-
-## Подготовка (до demo)
-
-### Demo репозитории
+## Quick Demo (30 seconds)
 
 ```bash
-# Demo 1: Small Node.js service
-git clone https://github.com/example/node-starter demo-service
-cd demo-service
-
-# Demo 2: React app
-git clone https://github.com/example/react-boilerplate demo-frontend
-cd demo-frontend
-
-# Demo 3: Full stack (создаём проблемный intentionally)
-git clone https://github.com/example/fullstack-app demo-fullstack
-cd demo-fullstack
-```
-
-### Проверка
-
-```bash
-# Каждый репо должен иметь:
-- package.json
-- Dockerfile (для service и fullstack)
-- .github/workflows/ci.yml
-```
-
----
-
-## Demo Script (5 минут)
-
-### Minute 0-1: Установка и первый запуск
-
-```bash
-# Global install
+# Install globally
 npm install -g dev-optimizer
 
-# First run
+# Run on any Node.js project
+cd your-project
 dev-optimizer analyze
 
-# Output:
-# 🔍 Dev Optimizer v0.1.0
-# Analyzing: /path/to/demo-service
-#
-# 📊 Baseline
-# ──────────────────────────────────
-# Project: Node.js service
-# package.json: 12 dependencies
-# Dockerfile: present
-# CI config: GitHub Actions
-#
-# 🔴 Top Findings (5 issues)
-# ──────────────────────────────────
-# 1. [HIGH] Missing .dockerignore → +400 MB build context
-# 2. [HIGH] No cache in CI → +2 min per run
-# 3. [MEDIUM] Unused dependency: lodash → 72 KB
-# 4. [MEDIUM] Sequential CI jobs → +3 min total
-# 5. [LOW] No timeout in CI → Risk of runaway jobs
-#
-# 💰 Potential Savings
-# ──────────────────────────────────
-# Size: 472 MB | Time: 5 min per CI run
-```
-
-### Minute 1-2: Детальный отчёт
-
-```bash
-# Markdown report
-dev-optimizer analyze --format markdown > report.md
-
-# Show top findings
-dev-optimizer analyze --format table --top 3
-```
-
-### Minute 2-3: Безопасные исправления
-
-```bash
-# Preview changes
+# Preview fixes
 dev-optimizer fix --dry-run
 
-# Output:
-# 📝 Changes to apply:
-# ──────────────────────────────────
-# CREATE .dockerignore (high confidence)
-# ─────────────────────────────────--
-# node_modules
-# .git
-# *.log
-# coverage
-# .env
-#
-# Apply? (y/N) n
-```
-
-### Minute 3-4: Diff для рискованных изменений
-
-```bash
-# Show diff for multistage Docker suggestion
-dev-optimizer analyze --show-diff
-
-# Output:
-# 📋 Suggested: Convert to multistage Docker
-# ───────────────────────────────────
-# --- Dockerfile
-# +++ Dockerfile.multistage
-# @@ -1,10 +1,18 @@
-# -FROM ubuntu:latest
-# +FROM node:18-alpine AS builder
-# +
-# +WORKDIR /app
-# +COPY package*.json ./
-# +RUN npm ci --only=production
-#
-# Note: This change requires testing. Not auto-applied.
-```
-
-### Minute 4-5: Before/After
-
-```bash
 # Apply safe fixes
 dev-optimizer fix --safe
-
-# Re-analyze
-dev-optimizer analyze
-
-# Output:
-# ✅ Results after fixes:
-# ──────────────────────────────────
-# Score: 72 → 89 (+17 points)
-# Issues: 5 → 2 (-3 issues)
-#
-# Size saved: 400 MB
-# Time saved: 2 min per CI run
 ```
 
 ---
 
-## Ключевые моменты для демонстрации
+## Full Demo (5 minutes)
 
-### 1. Скорость анализа
-
-> "Полный анализ занял 3 секунды на репозитории с 50+ файлами"
-
-### 2. Понятный вывод
-
-> "Отчёт можно отправить менеджеру — clear business impact"
-
-### 3. Безопасность
-
-> "Мы не применяем рискованные изменения автоматически"
-
-### 4. ROI
-
-> "Мы показываем предполагаемую экономию времени и места"
-
-### 5. Простота
-
-> "Одна команда — и весь анализ готов"
-
----
-
-## Ответы на вопросы
-
-### Q: Почему только GitHub Actions?
-
-> "GitHub — самая популярная платформа для open source. GitLab CI добавим в post-MVP."
-
-### Q: Как вы определяете unused dependencies?
-
-> "Static analysis + import tracing. High confidence только когда импортов точно нет."
-
-### Q: Что если рекомендация неверна?
-
-> "Мы показываем confidence level. Low confidence = manual review."
-
-### Q: Сколько стоит?
-
-> "CLI — бесплатно и open source. PR comments + dashboard — paid SaaS."
-
----
-
-## После Demo
+### Setup
 
 ```bash
-# Cleanup
-npm uninstall -g dev-optimizer
-
-# Reset demo repo
-git checkout .
-rm -f .dockerignore report.md
+# Clone demo repos
+git clone https://github.com/example/bad-docker-demo demo-1
+git clone https://github.com/example/bad-ci-demo demo-2
+git clone https://github.com/example/bad-deps-demo demo-3
 ```
 
 ---
 
-## Checklist перед Demo
+### Demo 1: Docker Optimization (Node.js microservice)
 
-- [ ] Установлен dev-optimizer
-- [ ] Склонированы 3 demo репозитория
-- [ ] Проверен первый запуск на каждом
-- [ ] Подготовлен markdown report
-- [ ] Протестирован --dry-run режим
-- [ ] Протестирован --safe режим
-- [ ] Протестирован --show-diff
-- [ ] Подготовлен before/after скриншот
+**Before:**
+```
+🐳 Docker
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Score: 35/100
+Issues: 4
+  - Missing .dockerignore (-20 points)
+  - No multistage build (-15 points)  
+  - Large base image: ubuntu:latest (-10 points)
+  - No cleanup after install (-10 points)
+
+Potential Savings: 650 MB (54% reduction)
+```
+
+**After:**
+```bash
+dev-optimizer fix --safe
+```
+
+```
+✅ Created .dockerignore
+
+📊 Summary:
+✅ Applied: 1
+⏭️  Skipped: 0
+❌ Errors: 0
+
+Score: 55/100 (+20 points)
+Savings: 400 MB applied
+```
+
+**Manual review for multistage:**
+```bash
+dev-optimizer analyze --format markdown > docker-fixes.md
+```
+
+---
+
+### Demo 2: CI/CD Optimization (GitHub Actions)
+
+**Before:**
+```
+🔄 CI/CD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Score: 40/100
+Issues: 3
+  - No caching configured (-20 points)
+  - No matrix strategy (-10 points)
+  - Sequential jobs (-10 points)
+
+Potential Savings: 8 min per CI run
+```
+
+**After:**
+```bash
+dev-optimizer fix --dry-run
+```
+
+```
+📝 Planned fixes:
+
+🔄 [HIGH] No caching configured
+   File: .github/workflows/ci.yml
+   Action: Add actions/cache for npm
+
+--- .github/workflows/ci.yml ---
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
++         cache: 'npm'
+```
+
+**Score: 60/100 (+20 points)**
+**Savings: 3 min per CI run**
+
+---
+
+### Demo 3: Dependency Cleanup (npm)
+
+**Before:**
+```
+📦 Dependencies
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Score: 50/100
+Issues: 4
+  - Unused: lodash (72 KB)
+  - Unused: moment (230 KB)  
+  - Duplicate: axios appears twice
+  - Missing package-lock.json
+
+node_modules: 285 MB
+Dependencies: 52
+```
+
+**After:**
+```bash
+dev-optimizer fix --safe
+```
+
+```
+✅ Removed unused: lodash
+✅ Created package-lock.json
+
+📊 Summary:
+✅ Applied: 2
+⏭️  Skipped: 1 (requires review)
+❌ Errors: 0
+
+Score: 70/100 (+20 points)
+Savings: 45 MB
+```
+
+---
+
+## Expected Results
+
+### Demo 1: Docker
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Image size | 1.2 GB | 550 MB | 54% |
+| Build time | 180s | 90s | 50% |
+| Score | 35 | 55 | +20 |
+
+### Demo 2: CI/CD
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| CI time | 12 min | 4 min | 67% |
+| Cache hits | 0% | 85% | +85% |
+| Score | 40 | 60 | +20 |
+
+### Demo 3: Dependencies
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| node_modules | 285 MB | 240 MB | 16% |
+| Dependencies | 52 | 48 | 8% |
+| Score | 50 | 70 | +20 |
+
+---
+
+## One-Liner Demo
+
+```bash
+npx dev-optimizer analyze && npx dev-optimizer fix --dry-run
+```
+
+---
+
+## Key Selling Points
+
+1. **One command** - Analyze all domains at once
+2. **Safe fixes** - Only applies low-risk changes
+3. **Clear ROI** - Shows savings in MB and minutes
+4. **No setup** - Works on any Node.js project
+5. **Fast** - Complete analysis in < 5 seconds

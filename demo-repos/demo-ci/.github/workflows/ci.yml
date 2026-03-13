@@ -1,0 +1,60 @@
+name: CI
+
+# Anti-pattern 1: No caching
+# Anti-pattern 2: No matrix for different Node versions
+# Anti-pattern 3: No timeout
+# Anti-pattern 4: Sequential jobs (no parallelization)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      
+      - name: Install dependencies
+        run: npm install
+
+  test:
+    runs-on: ubuntu-latest
+    # Anti-pattern: Sequential job - should use 'needs: install'
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Run tests
+        run: npm test
+
+  build:
+    runs-on: ubuntu-latest
+    # Anti-pattern: Another sequential job
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Build
+        run: npm run build
