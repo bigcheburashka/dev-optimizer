@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Coverage
+coverage/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test fixtures
+tests/fixtures/integration/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Cache
+.dev-optimizer-cache/
+.npm/
+.cache/
