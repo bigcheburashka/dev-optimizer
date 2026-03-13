@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { DockerAnalyzer } from '../analyzers/DockerAnalyzer.js';
 import { NpmAnalyzer } from '../analyzers/NpmAnalyzer.js';
+import { CiAnalyzer } from '../analyzers/CiAnalyzer.js';
 import { ConsoleReporter } from '../reporters/ConsoleReporter.js';
 export async function analyzeCommand(options) {
     const projectPath = path.resolve(options.path);
@@ -17,6 +18,7 @@ export async function analyzeCommand(options) {
     // Initialize analyzers
     const dockerAnalyzer = new DockerAnalyzer();
     const npmAnalyzer = new NpmAnalyzer();
+    const ciAnalyzer = new CiAnalyzer();
     const report = {
         timestamp: new Date().toISOString(),
         path: projectPath,
@@ -47,6 +49,18 @@ export async function analyzeCommand(options) {
         }
         else {
             console.log('No package.json found, skipping npm analysis.');
+        }
+    }
+    // CI/CD analysis
+    if (options.type === 'all' || options.type === 'ci') {
+        if (await ciAnalyzer.isApplicable(projectPath)) {
+            console.log('Running CI/CD analysis...');
+            const ciResult = await ciAnalyzer.analyze(projectPath);
+            report.ci = ciResult;
+            results.push(ciResult);
+        }
+        else {
+            console.log('No CI/CD config found, skipping CI analysis.');
         }
     }
     // Calculate overall score
