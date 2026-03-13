@@ -138,17 +138,14 @@ export class BaselineManager {
     }
 
     // Compare findings
-    const currentIds = new Set(current.findings.map(f => f.id));
-    const previousIds = new Set(previous.findings.total > 0 ? [] : []);
-
-    const newFindings = current.findings.filter(f => !previousIds.has(f.id));
+    previous.findings.total = previous.findings.total || 0;
     
     const changes = {
       scoreDelta: current.score - previous.score,
       findingsDelta: current.findings.length - previous.findings.total,
-      newFindings,
-      fixedFindings: [], // Would need previous findings stored
-      regressions: current.score < previous.score ? newFindings : []
+      newFindings: current.findings, // Can't compare without stored findings
+      fixedFindings: [],
+      regressions: current.score < previous.score ? current.findings : []
     };
 
     return {

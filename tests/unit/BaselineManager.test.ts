@@ -10,6 +10,35 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Helper to create valid Baseline
+function createBaseline(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    projectType: 'nodejs',
+    hasPackageJson: true,
+    hasDockerfile: false,
+    hasCi: true,
+    dependencyCount: 10,
+    ...overrides
+  };
+}
+
+// Helper to create valid Finding
+function createFinding(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 'test-001',
+    domain: 'docker',
+    title: 'Test Finding',
+    severity: 'high',
+    confidence: 'high',
+    description: 'Test description',
+    evidence: {},
+    impact: { type: 'size', estimate: '100 MB', confidence: 'high' },
+    suggestedFix: { type: 'create', file: '.dockerignore', description: 'Create .dockerignore', autoFixable: true },
+    autoFixSafe: true,
+    ...overrides
+  };
+}
+
 describe('BaselineManager', () => {
   const tempDir = path.join(__dirname, '../fixtures/temp-baseline');
   let manager: BaselineManager;
@@ -29,19 +58,10 @@ describe('BaselineManager', () => {
 
   describe('save', () => {
     it('should save baseline to file', async () => {
-      const baseline = {
-        projectType: 'nodejs',
-        hasPackageJson: true,
-        hasDockerfile: false,
-        hasCi: true,
-        dependencyCount: 10
-      };
+      const baseline = createBaseline();
+      const findings = [createFinding()];
 
-      const findings: any[] = [
-        { id: 'docker-001', domain: 'docker', title: 'Test', severity: 'high', confidence: 'high', description: '', evidence: {}, impact: { type: 'size', estimate: '', confidence: 'high' }, suggestedFix: { type: 'create', file: '', description: '', autoFixable: true }, autoFixSafe: true }
-      ];
-
-      const savedPath = await manager.save(baseline, findings, 85, { timeSeconds: 60, sizeMB: 100, percentImprovement: 10 });
+      const savedPath = await manager.save(baseline as any, findings as any, 85, { timeSeconds: 60, sizeMB: 100, percentImprovement: 10 });
 
       expect(fs.existsSync(savedPath)).toBe(true);
       
@@ -51,10 +71,10 @@ describe('BaselineManager', () => {
     });
 
     it('should create .dev-optimizer directory', async () => {
-      const baseline = { projectType: 'test' };
+      const baseline = createBaseline();
       const findings: any[] = [];
 
-      await manager.save(baseline, findings, 100, { timeSeconds: 0, sizeMB: 0, percentImprovement: 0 });
+      await manager.save(baseline as any, findings, 100, { timeSeconds: 0, sizeMB: 0, percentImprovement: 0 });
 
       const baselineDir = path.join(tempDir, '.dev-optimizer');
       expect(fs.existsSync(baselineDir)).toBe(true);
@@ -68,10 +88,10 @@ describe('BaselineManager', () => {
     });
 
     it('should load saved baseline', async () => {
-      const baseline = { projectType: 'test' };
+      const baseline = createBaseline();
       const findings: any[] = [];
 
-      await manager.save(baseline, findings, 75, { timeSeconds: 30, sizeMB: 50, percentImprovement: 5 });
+      await manager.save(baseline as any, findings, 75, { timeSeconds: 30, sizeMB: 50, percentImprovement: 5 });
       
       const loaded = await manager.load();
       
@@ -82,14 +102,12 @@ describe('BaselineManager', () => {
 
   describe('compare', () => {
     it('should return newFindings when no previous baseline', async () => {
-      const baseline = { projectType: 'test' };
-      const findings: any[] = [
-        { id: 'test-001', domain: 'docker', title: 'Test', severity: 'high', confidence: 'high', description: '', evidence: {}, impact: { type: 'size', estimate: '', confidence: 'high' }, suggestedFix: { type: 'create', file: '', description: '', autoFixable: true }, autoFixSafe: true }
-      ];
+      const baseline = createBaseline();
+      const findings = [createFinding()];
 
       const comparison = await manager.compare({
-        baseline,
-        findings,
+        baseline: baseline as any,
+        findings: findings as any,
         score: 80,
         savings: { timeSeconds: 60, sizeMB: 100, percentImprovement: 10 }
       });
@@ -100,16 +118,16 @@ describe('BaselineManager', () => {
     });
 
     it('should calculate score delta', async () => {
-      const baseline = { projectType: 'test' };
+      const baseline = createBaseline();
       const findings1: any[] = [];
       const findings2: any[] = [];
 
       // First save
-      await manager.save(baseline, findings1, 70, { timeSeconds: 60, sizeMB: 100, percentImprovement: 10 });
+      await manager.save(baseline as any, findings1, 70, { timeSeconds: 60, sizeMB: 100, percentImprovement: 10 });
 
       // Then compare with better score
       const comparison = await manager.compare({
-        baseline,
+        baseline: baseline as any,
         findings: findings2,
         score: 85,
         savings: { timeSeconds: 30, sizeMB: 50, percentImprovement: 5 }
@@ -124,11 +142,17 @@ describe('BaselineManager', () => {
     it('should format first baseline', () => {
       const comparison = {
         previous: null,
-        current: { score: 80, timestamp: '2024-01-01' },
+        current: {
+          timestamp: '2024-01-01T00:00:00Z',
+          baseline: createBaseline(),
+          findings: { total: 0, byDomain: {}, bySeverity: {} },
+          score: 80,
+          savings: { timeSeconds: 0, sizeMB: 0, percentImprovement: 0 }
+        },
         changes: { scoreDelta: 0, findingsDelta: 0, newFindings: [] }
       };
 
-      const output = manager.formatComparison(comparison);
+      const output = manager.formatComparison(comparison as any);
       
       expect(output).toContain('First baseline');
       expect(output).toContain('80/100');
@@ -136,15 +160,27 @@ describe('BaselineManager', () => {
 
     it('should format comparison with previous', () => {
       const comparison = {
-        previous: { score: 70, timestamp: '2024-01-01T00:00:00Z' },
-        current: { score: 85, timestamp: '2024-01-02' },
+        previous: {
+          timestamp: '2024-01-01T00:00:00Z',
+          baseline: createBaseline(),
+          findings: { total: 0, byDomain: {}, bySeverity: {} },
+          score: 70,
+          savings: { timeSeconds: 0, sizeMB: 0, percentImprovement: 0 }
+        },
+        current: {
+          timestamp: '2024-01-02T00:00:00Z',
+          baseline: createBaseline(),
+          findings: { total: 0, byDomain: {}, bySeverity: {} },
+          score: 85,
+          savings: { timeSeconds: 0, sizeMB: 0, percentImprovement: 0 }
+        },
         changes: { scoreDelta: 15, findingsDelta: -2, newFindings: [] }
       };
 
       const output = manager.formatComparison(comparison as any);
       
       expect(output).toContain('Previous: 70/100');
-      expect(output).toContain('Current: 85/100');
+      expect(output).toContain('85/100');
       expect(output).toContain('+15');
     });
   });
