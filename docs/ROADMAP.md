@@ -1,67 +1,75 @@
 # dev-optimizer Roadmap
 
-## Статус: MVP Complete, расширяем анализаторы
+## Статус: MVP Complete + Extended Analyzers
 
 ---
 
-## Текущая задача: Расширение анализаторов
+## Выполнено (сессия 2026-03-13)
 
-### Режимы запуска
-
-| Режим | Команда | Что делает | Время |
-|-------|---------|------------|-------|
-| **Quick** | `--quick` | Быстрый анализ без npm install | ~5 сек |
-| **Full** | (default) | Полный анализ с npm outdated/audit | ~30 сек |
-| **Deep** | `--deep` | Глубокий анализ с bundlesize | ~2 мин |
-
-### DepsAnalyzer расширения
+### DepsAnalyzer расширения ✅
 
 | Проверка | Режим | Инструмент | Статус |
 |----------|-------|------------|--------|
 | Unused deps | Quick | knip | ✅ Done |
-| Deprecated packages | Quick | package.json parse | ❌ Todo |
-| Outdated packages | Full | npm outdated | ❌ Todo |
-| Security issues | Full | npm audit | ❌ Todo |
-| Large dependencies | Deep | bundlesize estimate | ❌ Todo |
+| Deprecated packages | Quick | package.json parse | ✅ Done |
+| Outdated packages | Full | npm outdated | ✅ Done |
+| Security issues | Full | npm audit | ✅ Done |
 
-### CiAnalyzer расширения
+### CiAnalyzer расширения ✅
 
-| Проверка | Режим | Сложность | Статус |
-|----------|-------|-----------|--------|
-| No cache | Quick | Low | ✅ Done |
-| No timeout | Quick | Low | ✅ Done |
-| Matrix optimization | Quick | Medium | ❌ Todo |
-| Artifact caching | Quick | Medium | ❌ Todo |
-| Self-hosted runners | Full | Low | ❌ Todo |
+| Проверка | Режим | Статус |
+|----------|-------|--------|
+| No cache | Quick | ✅ Done |
+| No timeout | Quick | ✅ Done |
+| Matrix optimization | Quick | ✅ Done |
+| Artifact caching | Quick | ✅ Done |
+| Duplicate jobs | Quick | ✅ Done |
+| Self-hosted runners | Full | ✅ Done |
 
-### DockerAnalyzer расширения
+### DockerAnalyzer расширения ✅
 
-| Проверка | Режим | Сложность | Статус |
-|----------|-------|-----------|--------|
-| .dockerignore | Quick | Low | ✅ Done |
-| Multistage | Quick | Low | ✅ Done |
-| Base image | Quick | Low | ✅ Done |
-| Layer optimization | Full | Medium | ❌ Todo |
-| Security scan | Deep | hadolint | ❌ Todo |
-
----
-
-## Использование зависимостей
-
-| Пакет | Назначение |
-|-------|------------|
-| **depcheck** | DepsAnalyzer — дублировать knip для надёжности |
-| **eslint** | CodeAnalyzer — 4-й домен (future) |
-| **ora** | ConsoleReporter — UX спиннер |
-| **ts-node** | Разработка — запуск без build |
+| Проверка | Режим | Статус |
+|----------|-------|--------|
+| .dockerignore | Quick | ✅ Done |
+| Multistage | Quick | ✅ Done |
+| Base image | Quick | ✅ Done |
+| Layer optimization | Quick | ✅ Done |
+| COPY vs ADD | Quick | ✅ Done |
+| WORKDIR check | Quick | ✅ Done |
+| Hadolint | Full | ✅ Done |
 
 ---
 
-## Следующие шаги
+## Текущий статус
 
-1. Добавить флаги `--quick`, `--deep` в CLI
-2. Реализовать deprecated packages check
-3. Реализовать npm outdated integration
-4. Реализовать npm audit integration
-5. Добавить matrix optimization check
-6. Добавить artifact caching check
+| Компонент | Тесты | Статус |
+|-----------|-------|--------|
+| DockerAnalyzer | 11 | ✅ Extended |
+| CiAnalyzer | 8 | ✅ Extended |
+| DepsAnalyzer | 11 | ✅ Extended |
+| RepoScanner | 13 | ✅ Done |
+| Fix command | 12 | ✅ Done |
+| BaselineManager | 11 | ✅ Done |
+| GitHub Action | - | ✅ Done |
+| **Total** | **59** | ✅ |
+
+---
+
+## Режимы анализа
+
+```bash
+dev-optimizer analyze --quick   # ~5 сек, только статический анализ
+dev-optimizer analyze           # ~30 сек, +npm outdated/audit, +hadolint
+dev-optimizer analyze --deep   # ~2 мин, +size estimates (future)
+```
+
+---
+
+## Remaining (Deprioritized)
+
+| Задача | Приоритет | Статус |
+|--------|-----------|--------|
+| ora UX spinner | Low | ❌ |
+| depcheck integration | Low | ❌ |
+| Image size analysis | Low | ❌ |
+| Bundle size estimates | Low | ❌ |
