@@ -34,6 +34,7 @@ program
   .option('-p, --path <path>', 'Path to project', '.')
   .option('--dry-run', 'Show changes without applying', false)
   .option('--safe', 'Only apply safe fixes', true)
+  .option('--interactive', 'Ask for confirmation before each fix', false)
   .action(fixCommand);
 
 program

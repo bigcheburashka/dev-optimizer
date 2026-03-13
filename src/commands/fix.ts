@@ -243,13 +243,152 @@ async function modifyFile(filePath: string, fix: Finding['suggestedFix'], findin
     };
   }
 
-  // For now, modifications require manual review
-  // Return the diff for user to apply manually
+  // Handle different fix types
+  if (finding.id.startsWith('ci-004') || finding.id.includes('timeout')) {
+    // Add timeout-minutes to GitHub Actions
+    return await addTimeoutToGitHub(filePath, fix, finding);
+  }
+
+  if (finding.id.includes('artifact-retention')) {
+    // Add retention-days to upload-artifact
+    return await addRetentionToArtifact(filePath, fix, finding);
+  }
+
+  // For other modifications, return diff for manual review
+  const content = fs.readFileSync(filePath, 'utf-8');
+  
   return {
     findingId: finding.id,
     applied: false,
     file: fix.file,
-    diff: fix.diff
+    diff: fix.diff || `Suggestion: ${fix.description}`,
+    error: 'Manual modification required'
+  };
+}
+
+/**
+ * Add timeout-minutes to GitHub Actions workflow
+ */
+async function addTimeoutToGitHub(filePath: string, fix: Finding['suggestedFix'], finding: Finding): Promise<FixResult> {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const yaml = await import('yaml');
+    const workflow = yaml.parse(content);
+
+    if (!workflow.jobs) {
+      return {
+        findingId: finding.id,
+        applied: false,
+        file: fix.file,
+        error: 'No jobs found in workflow'
+      };
+    }
+
+    // Add timeout-minutes to each job
+    for (const jobName of Object.keys(workflow.jobs)) {
+      if (!workflow.jobs[jobName]['timeout-minutes']) {
+        workflow.jobs[jobName]['timeout-minutes'] = 10;
+      }
+    }
+
+    // Write back
+    const newContent = yaml.stringify(workflow);
+    fs.writeFileSync(filePath, newContent, 'utf-8');
+
+    return {
+      findingId: finding.id,
+      applied: true,
+      file: fix.file,
+      diff: 'Added timeout-minutes: 10 to all jobs'
+    };
+  } catch (error: any) {
+    return {
+      findingId: finding.id,
+      applied: false,
+      file: fix.file,
+      error: error.message || 'Failed to add timeout'
+    };
+  }
+}
+
+/**
+ * Add retention-days to upload-artifact steps
+ */
+async function addRetentionToArtifact(filePath: string, fix: Finding['suggestedFix'], finding: Finding): Promise<FixResult> {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const yaml = await import('yaml');
+    const workflow = yaml.parse(content);
+
+    if (!workflow.jobs) {
+      return {
+        findingId: finding.id,
+        applied: false,
+        file: fix.file,
+        error: 'No jobs found in workflow'
+      };
+    }
+
+    let modified = false;
+
+    // Find upload-artifact steps
+    for (const jobName of Object.keys(workflow.jobs)) {
+      const job = workflow.jobs[jobName];
+      if (job.steps && Array.isArray(job.steps)) {
+        for (const step of job.steps) {
+          if (step.uses && step.uses.includes('upload-artifact')) {
+            if (!step.with) {
+              step.with = {};
+            }
+            if (!step.with['retention-days']) {
+              step.with['retention-days'] = 7;
+              modified = true;
+            }
+          }
+        }
+      }
+    }
+
+    if (!modified) {
+      return {
+        findingId: finding.id,
+        applied: false,
+        file: fix.file,
+        error: 'No upload-artifact steps found'
+      };
+    }
+
+    // Write back
+    const newContent = yaml.stringify(workflow);
+    fs.writeFileSync(filePath, newContent, 'utf-8');
+
+    return {
+      findingId: finding.id,
+      applied: true,
+      file: fix.file,
+      diff: 'Added retention-days: 7 to upload-artifact steps'
+    };
+  } catch (error: any) {
+    return {
+      findingId: finding.id,
+      applied: false,
+      file: fix.file,
+      error: error.message || 'Failed to add retention'
+    };
+  }
+}
+
+/**
+ * Modify a file (general case)
+ */
+async function modifyFileGeneral(filePath: string, fix: Finding['suggestedFix'], finding: Finding): Promise<FixResult> {
+  // General modifications require manual review
+  return {
+    findingId: finding.id,
+    applied: false,
+    file: fix.file,
+    diff: fix.diff || `Suggestion: ${fix.description}`,
+    error: 'Manual modification required'
   };
 }
 
