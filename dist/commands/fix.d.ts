@@ -2,10 +2,12 @@
  * Fix command
  * Apply safe optimizations automatically
  */
-import { FixOptions } from '../types.js';
-interface FixOptionsExtended extends FixOptions {
-    safe?: boolean;
+interface FixOptions {
+    path: string;
+    dryRun: boolean;
+    safe: boolean;
+    domain?: 'docker' | 'deps' | 'ci' | 'all';
 }
-export declare function fixCommand(options: FixOptionsExtended): Promise<void>;
+export declare function fixCommand(options: FixOptions): Promise<void>;
 export {};
 //# sourceMappingURL=fix.d.ts.map

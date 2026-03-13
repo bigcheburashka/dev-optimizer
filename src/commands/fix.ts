@@ -8,13 +8,21 @@ import * as path from 'path';
 import { DockerAnalyzer } from '../analyzers/DockerAnalyzer.js';
 import { DepsAnalyzer } from '../analyzers/DepsAnalyzer.js';
 import { CiAnalyzer } from '../analyzers/CiAnalyzer.js';
-import { Finding, FixResult, FixOptions } from '../types.js';
+import { Finding, FixResult } from '../types.js';
 
-interface FixOptionsExtended extends FixOptions {
-  safe?: boolean;
+interface FixOptions {
+  path: string;
+  dryRun: boolean;
+  safe: boolean;
+  domain?: 'docker' | 'deps' | 'ci' | 'all';
 }
 
-export async function fixCommand(options: FixOptionsExtended): Promise<void> {
+interface AppliedFix {
+  finding: Finding;
+  result: FixResult;
+}
+
+export async function fixCommand(options: FixOptions): Promise<void> {
   const projectPath = path.resolve(options.path);
   
   if (!fs.existsSync(projectPath)) {
@@ -22,123 +30,247 @@ export async function fixCommand(options: FixOptionsExtended): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`Analyzing: ${projectPath}\n`);
-  console.log(`Mode: ${options.dryRun ? 'dry-run (no changes)' : 'apply fixes'}\n`);
-  console.log(`Safety: ${options.safe !== false ? 'safe fixes only' : 'all fixes'}\n`);
+  console.log(`🔧 Dev Optimizer Fix\n`);
+  console.log(`Path: ${projectPath}`);
+  console.log(`Mode: ${options.dryRun ? 'dry-run (preview only)' : 'apply changes'}`);
+  console.log(`Safety: ${options.safe ? 'safe fixes only' : 'all auto-fixable'}\n`);
 
-  const results: FixResult[] = [];
-
-  // Run analyzers and collect auto-fixable findings
+  // Collect findings from all analyzers
+  const allFindings: Finding[] = [];
+  
   const dockerAnalyzer = new DockerAnalyzer();
   const depsAnalyzer = new DepsAnalyzer();
   const ciAnalyzer = new CiAnalyzer();
 
-  const analyzers = [dockerAnalyzer, depsAnalyzer, ciAnalyzer];
-  const allFindings: Finding[] = [];
-
-  for (const analyzer of analyzers) {
-    if (await analyzer.isApplicable(projectPath)) {
-      console.log(`Running ${analyzer.name} analysis...`);
-      const result = await analyzer.analyze(projectPath);
+  // Docker findings
+  if (options.domain === 'all' || options.domain === 'docker' || !options.domain) {
+    if (await dockerAnalyzer.isApplicable(projectPath)) {
+      console.log('🐳 Collecting Docker findings...');
+      const result = await dockerAnalyzer.analyze(projectPath);
       allFindings.push(...result.findings);
     }
   }
 
-  // Filter auto-fixable findings
-  const autoFixable = allFindings.filter(f => 
-    f.autoFixSafe && f.suggestedFix.autoFixable
-  );
-
-  console.log(`Found ${autoFixable.length} auto-fixable issues\n`);
-
-  for (const finding of autoFixable) {
-    if (options.safe && !finding.autoFixSafe) {
-      console.log(`Skipping (unsafe): ${finding.title}`);
-      continue;
+  // Dependencies findings
+  if (options.domain === 'all' || options.domain === 'deps' || !options.domain) {
+    if (await depsAnalyzer.isApplicable(projectPath)) {
+      console.log('📦 Collecting Dependencies findings...');
+      const result = await depsAnalyzer.analyze(projectPath);
+      allFindings.push(...result.findings);
     }
+  }
 
-    const result = await applyFix(projectPath, finding, options.dryRun);
-    results.push(result);
+  // CI findings
+  if (options.domain === 'all' || options.domain === 'ci' || !options.domain) {
+    if (await ciAnalyzer.isApplicable(projectPath)) {
+      console.log('🔄 Collecting CI/CD findings...');
+      const result = await ciAnalyzer.analyze(projectPath);
+      allFindings.push(...result.findings);
+    }
+  }
+
+  console.log(`\n📊 Found ${allFindings.length} issues\n`);
+
+  // Filter auto-fixable findings
+  const autoFixable = allFindings.filter(f => f.suggestedFix.autoFixable);
+  const safeFixable = autoFixable.filter(f => f.autoFixSafe);
+
+  const toFix = options.safe ? safeFixable : autoFixable;
+
+  console.log(`Auto-fixable: ${autoFixable.length}`);
+  console.log(`Safe fixes: ${safeFixable.length}`);
+  console.log(`Will apply: ${toFix.length}\n`);
+
+  if (toFix.length === 0) {
+    console.log('✅ No fixes to apply.\n');
+    if (allFindings.length > 0) {
+      console.log('💡 Run `dev-optimizer analyze` to see all issues.');
+    }
+    return;
+  }
+
+  // Show what will be fixed
+  console.log('═'.repeat(60));
+  console.log('Planned fixes:\n');
+
+  for (const finding of toFix) {
+    const icon = { docker: '🐳', deps: '📦', ci: '🔄' }[finding.domain];
+    console.log(`${icon} [${finding.severity.toUpperCase()}] ${finding.title}`);
+    console.log(`   File: ${finding.suggestedFix.file}`);
+    console.log(`   Action: ${finding.suggestedFix.description}\n`);
+  }
+
+  if (options.dryRun) {
+    console.log('═'.repeat(60));
+    console.log('\n📝 Dry-run mode: no changes will be made.\n');
+    
+    for (const finding of toFix) {
+      if (finding.suggestedFix.diff) {
+        console.log(`--- ${finding.suggestedFix.file} ---`);
+        console.log(finding.suggestedFix.diff);
+        console.log('');
+      }
+    }
+    
+    console.log('Run without --dry-run to apply these fixes.');
+    return;
+  }
+
+  // Apply fixes
+  const applied: AppliedFix[] = [];
+  const skipped: AppliedFix[] = [];
+  const errors: { finding: Finding; error: string }[] = [];
+
+  console.log('═'.repeat(60));
+  console.log('\n🔨 Applying fixes...\n');
+
+  for (const finding of toFix) {
+    const result = await applyFix(projectPath, finding);
     
     if (result.applied) {
-      console.log(`✅ Applied: ${finding.title}`);
-    } else if (options.dryRun) {
-      console.log(`📝 Would apply: ${finding.title}`);
-      if (finding.suggestedFix.diff) {
-        console.log(`\n${finding.suggestedFix.diff}\n`);
+      applied.push({ finding, result });
+      console.log(`✅ ${finding.title}`);
+      if (result.diff) {
+        console.log(`   ${finding.suggestedFix.file}`);
       }
+    } else if (result.error) {
+      errors.push({ finding, error: result.error });
+      console.log(`❌ ${finding.title}: ${result.error}`);
+    } else {
+      skipped.push({ finding, result });
     }
   }
 
   // Summary
-  console.log('\n' + '═'.repeat(50));
-  console.log(`Total findings: ${allFindings.length}`);
-  console.log(`Auto-fixable: ${autoFixable.length}`);
-  console.log(`Applied: ${results.filter(r => r.applied).length}`);
-  console.log(`Skipped: ${results.filter(r => !r.applied).length}`);
-  
-  if (options.dryRun) {
-    console.log('\nThis was a dry-run. No changes were made.');
-    console.log('Run without --dry-run to apply changes.');
+  console.log('\n' + '═'.repeat(60));
+  console.log('\n📊 Summary:\n');
+  console.log(`✅ Applied: ${applied.length}`);
+  console.log(`⏭️  Skipped: ${skipped.length}`);
+  console.log(`❌ Errors: ${errors.length}\n`);
+
+  if (errors.length > 0) {
+    console.log('Failed fixes:\n');
+    for (const { finding, error } of errors) {
+      console.log(`  ${finding.title}: ${error}`);
+    }
+  }
+
+  // Next steps
+  const remaining = allFindings.filter(f => !f.suggestedFix.autoFixable);
+  if (remaining.length > 0) {
+    console.log(`\n💡 ${remaining.length} issues require manual review.`);
+    console.log('   Run `dev-optimizer analyze` to see details.\n');
   }
 }
 
-async function applyFix(
-  projectPath: string, 
-  finding: Finding, 
-  dryRun: boolean
-): Promise<FixResult> {
+/**
+ * Apply a single fix
+ */
+async function applyFix(projectPath: string, finding: Finding): Promise<FixResult> {
   const fix = finding.suggestedFix;
   const filePath = path.join(projectPath, fix.file);
 
   try {
-    // Create file
-    if (fix.type === 'create') {
-      if (fs.existsSync(filePath) && !dryRun) {
+    switch (fix.type) {
+      case 'create':
+        return await createFile(filePath, fix, finding);
+      
+      case 'modify':
+        return await modifyFile(filePath, fix, finding);
+      
+      case 'delete':
+        return await deleteFile(filePath, fix, finding);
+      
+      default:
         return {
           findingId: finding.id,
           applied: false,
           file: fix.file,
-          error: 'File already exists'
+          error: 'Unknown fix type'
         };
-      }
-
-      if (!dryRun && fix.diff) {
-        fs.writeFileSync(filePath, fix.diff);
-      }
-
-      return {
-        findingId: finding.id,
-        applied: !dryRun,
-        file: fix.file,
-        diff: fix.diff
-      };
     }
-
-    // Modify file (requires manual review in most cases)
-    if (fix.type === 'modify') {
-      // For now, just return the diff for review
-      return {
-        findingId: finding.id,
-        applied: false,
-        file: fix.file,
-        diff: fix.diff
-      };
-    }
-
-    // Delete file (rare, requires manual review)
-    return {
-      findingId: finding.id,
-      applied: false,
-      file: fix.file
-    };
-
-  } catch (error) {
+  } catch (error: any) {
     return {
       findingId: finding.id,
       applied: false,
       file: fix.file,
-      error: String(error)
+      error: error.message || String(error)
     };
   }
+}
+
+/**
+ * Create a new file
+ */
+async function createFile(filePath: string, fix: Finding['suggestedFix'], finding: Finding): Promise<FixResult> {
+  if (fs.existsSync(filePath)) {
+    return {
+      findingId: finding.id,
+      applied: false,
+      file: fix.file,
+      error: 'File already exists'
+    };
+  }
+
+  // Ensure parent directory exists
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  // Write file
+  const content = fix.diff || '';
+  fs.writeFileSync(filePath, content, 'utf-8');
+
+  return {
+    findingId: finding.id,
+    applied: true,
+    file: fix.file,
+    diff: fix.diff
+  };
+}
+
+/**
+ * Modify an existing file
+ */
+async function modifyFile(filePath: string, fix: Finding['suggestedFix'], finding: Finding): Promise<FixResult> {
+  if (!fs.existsSync(filePath)) {
+    return {
+      findingId: finding.id,
+      applied: false,
+      file: fix.file,
+      error: 'File not found'
+    };
+  }
+
+  // For now, modifications require manual review
+  // Return the diff for user to apply manually
+  return {
+    findingId: finding.id,
+    applied: false,
+    file: fix.file,
+    diff: fix.diff
+  };
+}
+
+/**
+ * Delete a file
+ */
+async function deleteFile(filePath: string, fix: Finding['suggestedFix'], finding: Finding): Promise<FixResult> {
+  if (!fs.existsSync(filePath)) {
+    return {
+      findingId: finding.id,
+      applied: false,
+      file: fix.file,
+      error: 'File not found'
+    };
+  }
+
+  // Deletions require manual review
+  return {
+    findingId: finding.id,
+    applied: false,
+    file: fix.file,
+    error: 'Deletion requires manual review'
+  };
 }
