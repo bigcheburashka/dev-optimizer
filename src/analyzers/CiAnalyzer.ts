@@ -1,15 +1,16 @@
 /**
  * CI/CD Analyzer
  * Analyzes GitHub Actions and GitLab CI for optimization opportunities
+ * Returns unified Finding[] format
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'yaml';
-import { Analyzer, AnalysisResult, Issue, CiMetrics, Savings, Suggestion } from '../types.js';
+import { Analyzer, AnalysisResult, Finding, Baseline, Savings, Domain } from '../types.js';
 
 export class CiAnalyzer implements Analyzer {
-  name = 'ci';
+  name: Domain = 'ci';
 
   async isApplicable(projectPath: string): Promise<boolean> {
     const githubActions = path.join(projectPath, '.github/workflows');
@@ -19,9 +20,8 @@ export class CiAnalyzer implements Analyzer {
   }
 
   async analyze(projectPath: string): Promise<AnalysisResult> {
-    const issues: Issue[] = [];
-    const suggestions: Suggestion[] = [];
-    let score = 100;
+    const findings: Finding[] = [];
+    const baseline = await this.collectBaseline(projectPath);
 
     // Check for GitHub Actions
     const githubActionsPath = path.join(projectPath, '.github/workflows');
@@ -31,218 +31,259 @@ export class CiAnalyzer implements Analyzer {
 
       for (const file of workflowFiles) {
         const filePath = path.join(githubActionsPath, file);
-        const workflowResult = await this.analyzeWorkflow(filePath, file);
-        
-        issues.push(...workflowResult.issues);
-        suggestions.push(...workflowResult.suggestions);
-        score = Math.min(score, workflowResult.score);
+        const workflowFindings = await this.analyzeWorkflow(filePath, file);
+        findings.push(...workflowFindings);
       }
     }
 
     // Check for GitLab CI
     const gitlabCiPath = path.join(projectPath, '.gitlab-ci.yml');
     if (fs.existsSync(gitlabCiPath)) {
-      const gitlabResult = await this.analyzeGitLabCi(gitlabCiPath);
-      issues.push(...gitlabResult.issues);
-      suggestions.push(...gitlabResult.suggestions);
-      score = Math.min(score, gitlabResult.score);
+      const gitlabFindings = await this.analyzeGitLabCi(gitlabCiPath);
+      findings.push(...gitlabFindings);
     }
 
-    // Check for missing CI/CD
-    if (!fs.existsSync(githubActionsPath) && !fs.existsSync(gitlabCiPath)) {
-      // CI exists but wasn't detected
-      if (!fs.existsSync(path.join(projectPath, 'Jenkinsfile')) &&
-          !fs.existsSync(path.join(projectPath, 'circle.yml'))) {
-        issues.push({
-          type: 'missing_ci',
-          severity: 'medium',
-          message: 'No CI/CD configuration found',
-          suggestion: 'Add GitHub Actions or GitLab CI for automated testing'
-        });
-        score -= 20;
-      }
-    }
-
-    const metrics: CiMetrics = await this.collectMetrics(projectPath);
-    const savings = this.calculateSavings(issues, metrics);
+    const savings = this.calculateSavings(findings);
 
     return {
       analyzer: 'ci',
-      score: Math.max(0, score),
-      issues,
-      suggestions,
-      metrics: { ci: metrics },
+      score: this.calculateScore(findings),
+      findings,
+      baseline,
       savings
     };
   }
 
-  private async analyzeWorkflow(filePath: string, fileName: string): Promise<{
-    issues: Issue[];
-    suggestions: Suggestion[];
-    score: number;
-  }> {
-    const issues: Issue[] = [];
-    const suggestions: Suggestion[] = [];
-    let score = 100;
+  private async collectBaseline(projectPath: string): Promise<Baseline> {
+    const githubActionsPath = path.join(projectPath, '.github/workflows');
+    const hasCi = fs.existsSync(githubActionsPath) || 
+                   fs.existsSync(path.join(projectPath, '.gitlab-ci.yml'));
 
+    let totalTime = 0;
+    
+    // Estimate CI time from workflow files
+    if (fs.existsSync(githubActionsPath)) {
+      const workflowFiles = fs.readdirSync(githubActionsPath)
+        .filter(f => f.endsWith('.yml') || f.endsWith('.yaml'));
+      
+      // Rough estimate: 5 minutes per workflow
+      totalTime = workflowFiles.length * 300;
+    }
+
+    return {
+      projectType: 'ci',
+      hasPackageJson: fs.existsSync(path.join(projectPath, 'package.json')),
+      hasDockerfile: fs.existsSync(path.join(projectPath, 'Dockerfile')),
+      hasCi,
+      dependencyCount: 0,
+      ciTotalTime: totalTime
+    };
+  }
+
+  private async analyzeWorkflow(filePath: string, fileName: string): Promise<Finding[]> {
+    const findings: Finding[] = [];
+    
     const content = fs.readFileSync(filePath, 'utf-8');
     let workflow: any;
 
     try {
       workflow = yaml.parse(content);
     } catch (e) {
-      issues.push({
-        type: 'invalid_yaml',
+      findings.push({
+        id: `ci-001-${fileName}`,
+        domain: 'ci',
+        title: `Invalid YAML in ${fileName}`,
+        description: 'Workflow file contains YAML syntax errors and cannot be parsed.',
+        evidence: { file: fileName },
         severity: 'critical',
-        message: `Invalid YAML in ${fileName}`,
-        file: fileName,
-        suggestion: 'Fix YAML syntax errors'
+        confidence: 'high',
+        impact: {
+          type: 'time',
+          estimate: 'CI will fail to run',
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: `.github/workflows/${fileName}`,
+          description: 'Fix YAML syntax errors',
+          autoFixable: false
+        },
+        autoFixSafe: false
       });
-      return { issues, suggestions, score: 0 };
+      return findings;
     }
 
-    // Check for caching
+    // Finding: Missing cache
     if (!this.hasCache(workflow)) {
-      issues.push({
-        type: 'missing_cache',
+      findings.push({
+        id: `ci-002-${fileName}`,
+        domain: 'ci',
+        title: `No caching configured in ${fileName}`,
+        description: 'Workflow does not use caching for dependencies. This increases CI time significantly.',
+        evidence: {
+          file: fileName,
+          metrics: {
+            estimatedTimeWithoutCache: 180,
+            estimatedTimeWithCache: 30
+          }
+        },
         severity: 'high',
-        message: `No caching configured in ${fileName}`,
-        file: fileName,
-        suggestion: 'Add actions/cache for node_modules, build artifacts',
-        documentation: 'https://github.com/actions/cache'
-      });
-      score -= 20;
-      
-      suggestions.push({
-        type: 'add_cache',
-        description: 'Add caching for dependencies and build artifacts',
-        impact: 'Save 50-80% on dependency installation time',
-        autoFix: true,
-        safe: true
+        confidence: 'high',
+        impact: {
+          type: 'time',
+          estimate: 'Save 2-3 minutes per CI run',
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: `.github/workflows/${fileName}`,
+          description: 'Add cache configuration to setup-node or use actions/cache',
+          autoFixable: true
+        },
+        autoFixSafe: true
       });
     }
 
-    // Check for parallelization
-    if (!this.hasMatrix(workflow) && this.shouldHaveMatrix(workflow)) {
-      issues.push({
-        type: 'missing_matrix',
+    // Finding: No matrix strategy
+    if (this.shouldHaveMatrix(workflow) && !this.hasMatrix(workflow)) {
+      findings.push({
+        id: `ci-003-${fileName}`,
+        domain: 'ci',
+        title: `No matrix strategy in ${fileName}`,
+        description: 'Using single Node.js version. Matrix strategy allows testing multiple versions in parallel.',
+        evidence: { file: fileName },
         severity: 'medium',
-        message: `No matrix strategy in ${fileName}`,
-        file: fileName,
-        suggestion: 'Use matrix for testing multiple Node versions, OS, etc.'
-      });
-      score -= 10;
-      
-      suggestions.push({
-        type: 'add_matrix',
-        description: 'Add matrix strategy for parallel testing',
-        impact: 'Reduce CI time by 50-70% through parallelization',
-        autoFix: false,
-        safe: true
+        confidence: 'medium',
+        impact: {
+          type: 'time',
+          estimate: 'Test multiple Node versions simultaneously',
+          confidence: 'medium'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: `.github/workflows/${fileName}`,
+          description: 'Add matrix strategy for Node versions',
+          autoFixable: false
+        },
+        autoFixSafe: false
       });
     }
 
-    // Check for timeout
+    // Finding: Missing timeout
     if (!this.hasTimeout(workflow)) {
-      issues.push({
-        type: 'missing_timeout',
+      findings.push({
+        id: `ci-004-${fileName}`,
+        domain: 'ci',
+        title: `No timeout configured in ${fileName}`,
+        description: 'Jobs without timeout can run indefinitely, wasting CI minutes.',
+        evidence: { file: fileName },
         severity: 'low',
-        message: `No timeout configured in ${fileName}`,
-        file: fileName,
-        suggestion: 'Add timeout-minutes to prevent runaway jobs'
+        confidence: 'high',
+        impact: {
+          type: 'cost',
+          estimate: 'Prevent runaway jobs (varies)',
+          confidence: 'medium'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: `.github/workflows/${fileName}`,
+          description: 'Add timeout-minutes to jobs',
+          autoFixable: true
+        },
+        autoFixSafe: true
       });
-      score -= 5;
     }
 
-    // Check for artifact upload
-    if (this.hasBuildStep(workflow) && !this.hasArtifactUpload(workflow)) {
-      issues.push({
-        type: 'missing_artifacts',
-        severity: 'low',
-        message: `Build artifacts not uploaded in ${fileName}`,
-        file: fileName,
-        suggestion: 'Upload build artifacts for debugging and deployment'
-      });
-      score -= 5;
-    }
-
-    // Check for large artifacts
-    if (this.hasLargeArtifacts(workflow)) {
-      issues.push({
-        type: 'large_artifacts',
-        severity: 'medium',
-        message: `Large artifacts in ${fileName} may slow down CI`,
-        file: fileName,
-        suggestion: 'Exclude unnecessary files from artifacts'
-      });
-      score -= 10;
-    }
-
-    // Check for sequential steps that could be parallel
+    // Finding: Sequential jobs
     if (this.hasSequentialJobs(workflow)) {
-      issues.push({
-        type: 'sequential_jobs',
+      findings.push({
+        id: `ci-005-${fileName}`,
+        domain: 'ci',
+        title: `Jobs run sequentially in ${fileName}`,
+        description: 'Jobs could run in parallel using needs directive.',
+        evidence: { file: fileName },
         severity: 'medium',
-        message: `Jobs run sequentially in ${fileName}`,
-        file: fileName,
-        suggestion: 'Use needs directive to create dependency graph'
+        confidence: 'high',
+        impact: {
+          type: 'time',
+          estimate: 'Save 3-5 minutes through parallelization',
+          confidence: 'medium'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: `.github/workflows/${fileName}`,
+          description: 'Use needs directive to create DAG for parallelization',
+          autoFixable: false
+        },
+        autoFixSafe: false
       });
-      score -= 10;
     }
 
-    return { issues, suggestions, score };
+    return findings;
   }
 
-  private async analyzeGitLabCi(filePath: string): Promise<{
-    issues: Issue[];
-    suggestions: Suggestion[];
-    score: number;
-  }> {
-    const issues: Issue[] = [];
-    const suggestions: Suggestion[] = [];
-    let score = 100;
-
+  private async analyzeGitLabCi(filePath: string): Promise<Finding[]> {
+    const findings: Finding[] = [];
+    
     const content = fs.readFileSync(filePath, 'utf-8');
     let gitlabCi: any;
 
     try {
       gitlabCi = yaml.parse(content);
     } catch (e) {
-      issues.push({
-        type: 'invalid_yaml',
+      findings.push({
+        id: 'ci-001-gitlab',
+        domain: 'ci',
+        title: 'Invalid YAML in .gitlab-ci.yml',
+        description: 'GitLab CI config contains YAML syntax errors.',
+        evidence: { file: '.gitlab-ci.yml' },
         severity: 'critical',
-        message: 'Invalid YAML in .gitlab-ci.yml',
-        file: '.gitlab-ci.yml',
-        suggestion: 'Fix YAML syntax errors'
+        confidence: 'high',
+        impact: {
+          type: 'time',
+          estimate: 'CI will fail to run',
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: '.gitlab-ci.yml',
+          description: 'Fix YAML syntax errors',
+          autoFixable: false
+        },
+        autoFixSafe: false
       });
-      return { issues, suggestions, score: 0 };
+      return findings;
     }
 
-    // Check for caching
+    // Finding: Missing cache
     if (!this.hasGitLabCache(gitlabCi)) {
-      issues.push({
-        type: 'missing_cache',
+      findings.push({
+        id: 'ci-006-gitlab',
+        domain: 'ci',
+        title: 'No caching configured in GitLab CI',
+        description: 'GitLab CI configuration does not use caching for dependencies.',
+        evidence: { file: '.gitlab-ci.yml' },
         severity: 'high',
-        message: 'No caching configured in GitLab CI',
-        suggestion: 'Add cache policy for node_modules, build artifacts'
+        confidence: 'high',
+        impact: {
+          type: 'time',
+          estimate: 'Save 2-3 minutes per pipeline run',
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: '.gitlab-ci.yml',
+          description: 'Add cache policy for node_modules',
+          autoFixable: true
+        },
+        autoFixSafe: true
       });
-      score -= 20;
     }
 
-    // Check for needs directive
-    if (this.hasSequentialGitLabJobs(gitlabCi)) {
-      issues.push({
-        type: 'sequential_jobs',
-        severity: 'medium',
-        message: 'Jobs run sequentially in GitLab CI',
-        suggestion: 'Use needs directive to create DAG for parallelization'
-      });
-      score -= 10;
-    }
-
-    return { issues, suggestions, score };
+    return findings;
   }
 
+  // Helper methods
   private hasCache(workflow: any): boolean {
     if (!workflow.jobs) return false;
     
@@ -250,12 +291,7 @@ export class CiAnalyzer implements Analyzer {
       const jobObj = job as any;
       if (jobObj.steps) {
         for (const step of jobObj.steps) {
-          // Check for actions/cache
-          if (step.uses?.includes('actions/cache')) {
-            return true;
-          }
-          // Check for cache in setup-node, setup-python, etc.
-          if (step.with?.cache) {
+          if (step.uses?.includes('actions/cache') || step.with?.cache) {
             return true;
           }
         }
@@ -266,9 +302,7 @@ export class CiAnalyzer implements Analyzer {
 
   private hasGitLabCache(gitlabCi: any): boolean {
     for (const job of Object.values(gitlabCi)) {
-      if ((job as any).cache) {
-        return true;
-      }
+      if ((job as any).cache) return true;
     }
     return false;
   }
@@ -277,15 +311,12 @@ export class CiAnalyzer implements Analyzer {
     if (!workflow.jobs) return false;
     
     for (const job of Object.values(workflow.jobs)) {
-      if ((job as any).strategy?.matrix) {
-        return true;
-      }
+      if ((job as any).strategy?.matrix) return true;
     }
     return false;
   }
 
   private shouldHaveMatrix(workflow: any): boolean {
-    // Check if this is a Node.js project that could benefit from matrix
     if (!workflow.jobs) return false;
     
     for (const job of Object.values(workflow.jobs)) {
@@ -300,46 +331,11 @@ export class CiAnalyzer implements Analyzer {
   }
 
   private hasTimeout(workflow: any): boolean {
-    if (!workflow.jobs) return true; // Assume default timeout
+    if (!workflow.jobs) return true;
     
     for (const job of Object.values(workflow.jobs)) {
-      if ((job as any)['timeout-minutes']) {
-        return true;
-      }
+      if ((job as any)['timeout-minutes']) return true;
     }
-    return false;
-  }
-
-  private hasBuildStep(workflow: any): boolean {
-    if (!workflow.jobs) return false;
-    
-    for (const job of Object.values(workflow.jobs)) {
-      const steps = (job as any).steps || [];
-      for (const step of steps) {
-        if (step.run?.includes('build') || step.run?.includes('compile')) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  private hasArtifactUpload(workflow: any): boolean {
-    if (!workflow.jobs) return false;
-    
-    for (const job of Object.values(workflow.jobs)) {
-      const steps = (job as any).steps || [];
-      for (const step of steps) {
-        if (step.uses?.includes('actions/upload-artifact')) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  private hasLargeArtifacts(workflow: any): boolean {
-    // Simplified check - could be enhanced
     return false;
   }
 
@@ -349,69 +345,44 @@ export class CiAnalyzer implements Analyzer {
     const jobNames = Object.keys(workflow.jobs);
     if (jobNames.length < 2) return false;
     
-    // Check if all jobs have 'needs' (dependency)
-    let hasNeeds = false;
     for (const job of Object.values(workflow.jobs)) {
-      if ((job as any).needs) {
-        hasNeeds = true;
-        break;
+      if ((job as any).needs) return false;
+    }
+    
+    return true;
+  }
+
+  private calculateScore(findings: Finding[]): number {
+    let score = 100;
+    
+    for (const finding of findings) {
+      switch (finding.severity) {
+        case 'critical': score -= 30; break;
+        case 'high': score -= 20; break;
+        case 'medium': score -= 10; break;
+        case 'low': score -= 5; break;
       }
     }
     
-    return !hasNeeds && jobNames.length > 1;
+    return Math.max(0, score);
   }
 
-  private hasSequentialGitLabJobs(gitlabCi: any): boolean {
-    const jobNames = Object.keys(gitlabCi).filter(k => 
-      !['stages', 'variables', 'default', 'include', 'workflow'].includes(k)
-    );
-    
-    if (jobNames.length < 2) return false;
-    
-    let hasNeeds = false;
-    for (const jobName of jobNames) {
-      if (gitlabCi[jobName]?.needs) {
-        hasNeeds = true;
-        break;
+  private calculateSavings(findings: Finding[]): Savings {
+    let timeSeconds = 0;
+
+    for (const finding of findings) {
+      // Extract time from estimate like "Save 2-3 minutes per CI run"
+      const match = finding.impact.estimate.match(/(\d+)-?(\d+)?\s*(minute|min)/i);
+      if (match) {
+        const minutes = parseInt(match[1]);
+        timeSeconds += minutes * 60;
       }
     }
-    
-    return !hasNeeds;
-  }
-
-  private async collectMetrics(projectPath: string): Promise<CiMetrics> {
-    // Estimate CI metrics
-    return {
-      totalTime: 600, // 10 minutes default
-      queueTime: 30,
-      cacheHitRate: 0.2, // 20% without proper caching
-      parallelJobs: 1
-    };
-  }
-
-  private calculateSavings(issues: Issue[], metrics: CiMetrics): Savings {
-    let timeSavings = 0;
-    
-    if (issues.some(i => i.type === 'missing_cache')) {
-      timeSavings += 120; // 2 minutes average savings
-    }
-    
-    if (issues.some(i => i.type === 'missing_matrix')) {
-      timeSavings += 180; // 3 minutes through parallelization
-    }
-    
-    if (issues.some(i => i.type === 'sequential_jobs')) {
-      timeSavings += 300; // 5 minutes through DAG
-    }
-
-    const percentImprovement = metrics.totalTime > 0 
-      ? Math.round((timeSavings / metrics.totalTime) * 100) 
-      : 0;
 
     return {
-      sizeMB: 0, // CI doesn't affect binary size directly
-      timeSeconds: timeSavings,
-      percentImprovement
+      timeSeconds,
+      sizeMB: 0,
+      percentImprovement: 0
     };
   }
 }

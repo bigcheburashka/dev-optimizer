@@ -1,10 +1,12 @@
 /**
  * Analyze command
+ * Unified analysis with Finding schema
  */
 interface AnalyzeOptions {
     path: string;
-    output: 'console' | 'json' | 'markdown';
-    type: 'docker' | 'npm' | 'ci' | 'all';
+    output: 'table' | 'json' | 'markdown';
+    type: 'docker' | 'deps' | 'ci' | 'all';
+    top: number;
 }
 export declare function analyzeCommand(options: AnalyzeOptions): Promise<void>;
 export {};

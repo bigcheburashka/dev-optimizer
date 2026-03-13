@@ -1,20 +1,22 @@
 /**
  * Docker Analyzer
  * Analyzes Dockerfile for optimization opportunities
+ * Returns unified Finding[] format
  */
-import { Analyzer, AnalysisResult } from '../types.js';
+import { Analyzer, AnalysisResult, Domain } from '../types.js';
 export declare class DockerAnalyzer implements Analyzer {
-    name: string;
+    name: Domain;
     isApplicable(projectPath: string): Promise<boolean>;
     analyze(projectPath: string): Promise<AnalysisResult>;
+    private collectBaseline;
+    private calculateScore;
+    private calculateSavings;
     private readDockerfile;
     private checkDockerignore;
-    private checkMultistage;
+    private hasMultistage;
     private getBaseImage;
-    private isAlpineBase;
+    private isSmallBase;
+    private hasCleanup;
     private countLayers;
-    private checkCleanup;
-    private calculateSavings;
-    private calculateTimeSavings;
 }
 //# sourceMappingURL=DockerAnalyzer.d.ts.map

@@ -8,74 +8,110 @@ export class ConsoleReporter {
         const lines = [];
         // Header
         lines.push('');
-        lines.push(chalk.bold('dev-optimizer Analysis Report'));
+        lines.push(chalk.bold('🔍 Dev Optimizer Report'));
         lines.push(chalk.gray(`Path: ${report.path}`));
         lines.push(chalk.gray(`Timestamp: ${report.timestamp}`));
         lines.push('');
-        // Overall score
-        const scoreColor = this.getScoreColor(report.overallScore);
-        lines.push(chalk.bold('Overall Score: ') + scoreColor(`${report.overallScore}/100`));
+        // Score
+        const scoreColor = this.getScoreColor(report.score);
+        lines.push(chalk.bold('Score: ') + scoreColor(`${report.score}/100`));
         lines.push('');
-        // Docker analysis
-        if (report.docker) {
-            lines.push(this.formatSection('Whale', 'Docker', report.docker));
-        }
-        // npm analysis
-        if (report.npm) {
-            lines.push(this.formatSection('Package', 'npm', report.npm));
-        }
-        // CI/CD analysis
-        if (report.ci) {
-            lines.push(this.formatSection('Gear', 'CI/CD', report.ci));
-        }
-        // Bundle analysis
-        if (report.bundle) {
-            lines.push(this.formatSection('Box', 'Bundle', report.bundle));
-        }
-        // Security analysis
-        if (report.security) {
-            lines.push(this.formatSection('Lock', 'Security', report.security));
-        }
-        // Total savings
-        lines.push('');
-        lines.push(chalk.bold('Potential Savings'));
+        // Baseline
+        lines.push(chalk.bold('📊 Baseline'));
         lines.push(chalk.gray('─'.repeat(40)));
-        lines.push(`Size: ${chalk.green(report.totalSavings.sizeMB + ' MB')}`);
-        lines.push(`Time: ${chalk.green(report.totalSavings.timeSeconds + ' sec')}`);
-        lines.push(`Improvement: ${chalk.green(report.totalSavings.percentImprovement + '%')}`);
+        lines.push(`Project: ${report.baseline.projectType || 'Unknown'}`);
+        lines.push(`Dependencies: ${report.baseline.dependencyCount}`);
+        lines.push(`Docker: ${report.baseline.hasDockerfile ? '✅' : '❌'}`);
+        lines.push(`CI/CD: ${report.baseline.hasCi ? '✅' : '❌'}`);
+        lines.push('');
+        // Top Findings
+        if (report.topFindings.length > 0) {
+            lines.push(chalk.bold('🔴 Top Findings'));
+            lines.push(chalk.gray('─'.repeat(40)));
+            for (const finding of report.topFindings.slice(0, 5)) {
+                lines.push(this.formatFinding(finding));
+            }
+        }
+        // Quick Wins
+        if (report.quickWins.length > 0) {
+            lines.push('');
+            lines.push(chalk.bold('💡 Quick Wins (Auto-fixable)'));
+            lines.push(chalk.gray('─'.repeat(40)));
+            for (const finding of report.quickWins) {
+                lines.push(chalk.green(`✅ ${finding.title}`));
+                lines.push(chalk.gray(`   Impact: ${finding.impact.estimate}`));
+                lines.push(chalk.gray(`   Fix: ${finding.suggestedFix.description}`));
+            }
+        }
+        // Manual Review
+        if (report.manualReview.length > 0) {
+            lines.push('');
+            lines.push(chalk.bold('⚠️  Requires Manual Review'));
+            lines.push(chalk.gray('─'.repeat(40)));
+            for (const finding of report.manualReview) {
+                lines.push(this.formatFinding(finding, 'yellow'));
+            }
+        }
+        // All Findings by Domain
+        lines.push('');
+        lines.push(chalk.bold('📋 All Findings'));
+        lines.push(chalk.gray('─'.repeat(40)));
+        const dockerFindings = report.findings.filter(f => f.domain === 'docker');
+        const ciFindings = report.findings.filter(f => f.domain === 'ci');
+        const depsFindings = report.findings.filter(f => f.domain === 'deps');
+        if (dockerFindings.length > 0) {
+            lines.push('');
+            lines.push(chalk.cyan('🐳 Docker'));
+            lines.push(this.formatFindingsList(dockerFindings));
+        }
+        if (ciFindings.length > 0) {
+            lines.push('');
+            lines.push(chalk.cyan('🔄 CI/CD'));
+            lines.push(this.formatFindingsList(ciFindings));
+        }
+        if (depsFindings.length > 0) {
+            lines.push('');
+            lines.push(chalk.cyan('📦 Dependencies'));
+            lines.push(this.formatFindingsList(depsFindings));
+        }
+        // Savings
+        lines.push('');
+        lines.push(chalk.bold('💰 Potential Savings'));
+        lines.push(chalk.gray('─'.repeat(40)));
+        if (report.totalSavings.sizeMB > 0) {
+            lines.push(`Size: ${chalk.green(report.totalSavings.sizeMB + ' MB')}`);
+        }
+        if (report.totalSavings.timeSeconds > 0) {
+            lines.push(`Time: ${chalk.green(Math.round(report.totalSavings.timeSeconds / 60) + ' min/CI run')}`);
+        }
+        if (report.totalSavings.percentImprovement > 0) {
+            lines.push(`Improvement: ${chalk.green(report.totalSavings.percentImprovement + '%')}`);
+        }
         lines.push('');
         return lines.join('\n');
     }
-    formatSection(emoji, name, result) {
+    formatFinding(finding, defaultColor = 'white') {
         const lines = [];
-        const scoreColor = this.getScoreColor(result.score);
-        lines.push(`${this.getEmoji(emoji)} ${chalk.bold(name)}`);
-        lines.push(chalk.gray('─'.repeat(40)));
-        lines.push(`Score: ${scoreColor(`${result.score}/100`)}`);
-        lines.push('');
-        // Issues
-        if (result.issues.length > 0) {
-            lines.push(chalk.bold('Issues:'));
-            for (const issue of result.issues) {
-                const severityColor = this.getSeverityColor(issue.severity);
-                lines.push(`  ${severityColor('●')} ${issue.message}`);
-                if (issue.suggestion) {
-                    lines.push(chalk.gray(`    → ${issue.suggestion}`));
-                }
-            }
-            lines.push('');
+        const severityColor = this.getSeverityColor(finding.severity);
+        lines.push(severityColor(`[${finding.severity.toUpperCase()}]`) + ` ${finding.title}`);
+        if (finding.evidence.file) {
+            lines.push(chalk.gray(`   File: ${finding.evidence.file}`));
         }
-        // Suggestions
-        if (result.suggestions.length > 0) {
-            lines.push(chalk.bold('Suggestions:'));
-            for (const suggestion of result.suggestions) {
-                const fixBadge = suggestion.autoFix
-                    ? chalk.green('[auto-fix]')
-                    : chalk.yellow('[manual]');
-                lines.push(`  ${fixBadge} ${suggestion.description}`);
-                lines.push(chalk.gray(`    Impact: ${suggestion.impact}`));
-            }
-            lines.push('');
+        lines.push(chalk.gray(`   Impact: ${finding.impact.estimate}`));
+        if (finding.suggestedFix.autoFixable) {
+            lines.push(chalk.green(`   Fix: ${finding.suggestedFix.description} (auto-fixable)`));
+        }
+        else {
+            lines.push(chalk.yellow(`   Suggestion: ${finding.suggestedFix.description}`));
+        }
+        return lines.join('\n');
+    }
+    formatFindingsList(findings) {
+        const lines = [];
+        for (const finding of findings) {
+            const severityColor = this.getSeverityColor(finding.severity);
+            const autoFix = finding.suggestedFix.autoFixable ? chalk.green(' ✅') : '';
+            lines.push(`  ${severityColor('●')} ${finding.title}${autoFix}`);
         }
         return lines.join('\n');
     }
@@ -85,7 +121,7 @@ export class ConsoleReporter {
         if (score >= 60)
             return chalk.yellow;
         if (score >= 40)
-            return chalk.hex('#FFA500'); // Orange
+            return chalk.hex('#FFA500');
         return chalk.red;
     }
     getSeverityColor(severity) {
@@ -93,19 +129,12 @@ export class ConsoleReporter {
             case 'critical': return chalk.red;
             case 'high': return chalk.hex('#FF6600');
             case 'medium': return chalk.yellow;
-            case 'low': return chalk.blue;
+            case 'low': return chalk.green;
             default: return chalk.gray;
         }
     }
-    getEmoji(name) {
-        const emojis = {
-            'Whale': '🐳',
-            'Package': '📦',
-            'Gear': '⚙️',
-            'Box': '📦',
-            'Lock': '🔒'
-        };
-        return emojis[name] || '•';
+    getExtension() {
+        return '.txt';
     }
 }
 //# sourceMappingURL=ConsoleReporter.js.map

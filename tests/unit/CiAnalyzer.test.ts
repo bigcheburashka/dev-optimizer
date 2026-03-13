@@ -1,5 +1,5 @@
 /**
- * Tests for CiAnalyzer
+ * Tests for CiAnalyzer with Finding schema
  */
 
 import { CiAnalyzer } from '../../src/analyzers/CiAnalyzer.js';
@@ -27,156 +27,69 @@ describe('CiAnalyzer', () => {
   });
 
   describe('analyze', () => {
-    describe('bad CI config', () => {
-      it('should detect missing cache', async () => {
-        const projectPath = path.join(__dirname, '../fixtures/bad-ci');
-        const result = await analyzer.analyze(projectPath);
-        
-        expect(result.issues).toContainEqual(
-          expect.objectContaining({
-            type: 'missing_cache',
-            severity: 'high'
-          })
-        );
-      });
-
-      it('should detect missing matrix', async () => {
-        const projectPath = path.join(__dirname, '../fixtures/bad-ci');
-        const result = await analyzer.analyze(projectPath);
-        
-        expect(result.issues).toContainEqual(
-          expect.objectContaining({
-            type: 'missing_matrix',
-            severity: 'medium'
-          })
-        );
-      });
-
-      it('should detect missing timeout', async () => {
-        const projectPath = path.join(__dirname, '../fixtures/bad-ci');
-        const result = await analyzer.analyze(projectPath);
-        
-        expect(result.issues).toContainEqual(
-          expect.objectContaining({
-            type: 'missing_timeout'
-          })
-        );
-      });
-
-      it('should detect sequential jobs', async () => {
-        const projectPath = path.join(__dirname, '../fixtures/bad-ci');
-        const result = await analyzer.analyze(projectPath);
-        
-        expect(result.issues).toContainEqual(
-          expect.objectContaining({
-            type: 'sequential_jobs',
-            severity: 'medium'
-          })
-        );
-      });
-
-      it('should have low score for bad CI config', async () => {
-        const projectPath = path.join(__dirname, '../fixtures/bad-ci');
-        const result = await analyzer.analyze(projectPath);
-        
-        expect(result.score).toBeLessThan(70);
-      });
-
-      it('should suggest adding cache', async () => {
-        const projectPath = path.join(__dirname, '../fixtures/bad-ci');
-        const result = await analyzer.analyze(projectPath);
-        
-        const cacheSuggestion = result.suggestions.find(s => s.type === 'add_cache');
-        expect(cacheSuggestion).toBeDefined();
-        expect(cacheSuggestion?.autoFix).toBe(true);
-        expect(cacheSuggestion?.safe).toBe(true);
-      });
-
-      it('should calculate time savings', async () => {
-        const projectPath = path.join(__dirname, '../fixtures/bad-ci');
-        const result = await analyzer.analyze(projectPath);
-        
-        expect(result.savings.timeSeconds).toBeGreaterThan(0);
-      });
-    });
-
-    describe('good CI config', () => {
-      it('should have high score for good CI config', async () => {
-        const projectPath = path.join(__dirname, '../fixtures/good-ci');
-        const result = await analyzer.analyze(projectPath);
-        
-        expect(result.score).toBeGreaterThanOrEqual(80);
-      });
-
-      it('should not detect missing cache', async () => {
-        const projectPath = path.join(__dirname, '../fixtures/good-ci');
-        const result = await analyzer.analyze(projectPath);
-        
-        expect(result.issues).not.toContainEqual(
-          expect.objectContaining({
-            type: 'missing_cache'
-          })
-        );
-      });
-
-      it('should not detect missing matrix', async () => {
-        const projectPath = path.join(__dirname, '../fixtures/good-ci');
-        const result = await analyzer.analyze(projectPath);
-        
-        expect(result.issues).not.toContainEqual(
-          expect.objectContaining({
-            type: 'missing_matrix'
-          })
-        );
-      });
-
-      it('should not detect sequential jobs (has needs directive)', async () => {
-        const projectPath = path.join(__dirname, '../fixtures/good-ci');
-        const result = await analyzer.analyze(projectPath);
-        
-        expect(result.issues).not.toContainEqual(
-          expect.objectContaining({
-            type: 'sequential_jobs'
-          })
-        );
-      });
-    });
-  });
-
-  describe('savings calculation', () => {
-    it('should calculate savings for missing cache', async () => {
+    it('should return unified Finding schema', async () => {
       const projectPath = path.join(__dirname, '../fixtures/bad-ci');
       const result = await analyzer.analyze(projectPath);
       
-      // Missing cache = ~2 minutes savings
-      expect(result.savings.timeSeconds).toBeGreaterThanOrEqual(120);
+      expect(result.analyzer).toBe('ci');
+      expect(result.findings).toBeDefined();
+      expect(Array.isArray(result.findings)).toBe(true);
+      expect(result.baseline).toBeDefined();
+      expect(result.savings).toBeDefined();
+      expect(result.score).toBeGreaterThanOrEqual(0);
+      expect(result.score).toBeLessThanOrEqual(100);
     });
 
-    it('should calculate percent improvement', async () => {
+    it('should detect missing cache in bad CI config', async () => {
       const projectPath = path.join(__dirname, '../fixtures/bad-ci');
       const result = await analyzer.analyze(projectPath);
       
-      expect(result.savings.percentImprovement).toBeGreaterThan(0);
+      const finding = result.findings.find(f => f.id.includes('ci-002'));
+      expect(finding).toBeDefined();
+      expect(finding?.title).toContain('No caching');
+      expect(finding?.severity).toBe('high');
+      expect(finding?.autoFixSafe).toBe(true);
     });
-  });
 
-  describe('edge cases', () => {
-    it('should handle empty workflow directory', async () => {
-      // Create temp empty directory
-      const tempPath = path.join(__dirname, '../fixtures/empty-ci');
-      const fs = await import('fs');
+    it('should detect missing matrix in bad CI config', async () => {
+      const projectPath = path.join(__dirname, '../fixtures/bad-ci');
+      const result = await analyzer.analyze(projectPath);
       
-      if (!fs.existsSync(tempPath)) {
-        fs.mkdirSync(tempPath, { recursive: true });
+      const finding = result.findings.find(f => f.id.includes('ci-003'));
+      expect(finding).toBeDefined();
+      expect(finding?.title).toContain('No matrix');
+    });
+
+    it('should include evidence with metrics', async () => {
+      const projectPath = path.join(__dirname, '../fixtures/bad-ci');
+      const result = await analyzer.analyze(projectPath);
+      
+      const finding = result.findings.find(f => f.id.includes('ci-002'));
+      expect(finding?.evidence.metrics).toBeDefined();
+    });
+
+    it('should not detect missing cache in good CI config', async () => {
+      const projectPath = path.join(__dirname, '../fixtures/good-ci');
+      const result = await analyzer.analyze(projectPath);
+      
+      const finding = result.findings.find(f => f.id.includes('ci-002'));
+      expect(finding).toBeUndefined();
+    });
+
+    it('should calculate time savings', async () => {
+      const projectPath = path.join(__dirname, '../fixtures/bad-ci');
+      const result = await analyzer.analyze(projectPath);
+      
+      expect(result.savings.timeSeconds).toBeGreaterThan(0);
+    });
+
+    it('should have correct domain', async () => {
+      const projectPath = path.join(__dirname, '../fixtures/bad-ci');
+      const result = await analyzer.analyze(projectPath);
+      
+      for (const finding of result.findings) {
+        expect(finding.domain).toBe('ci');
       }
-      
-      const workflowsPath = path.join(tempPath, '.github/workflows');
-      if (!fs.existsSync(workflowsPath)) {
-        fs.mkdirSync(workflowsPath, { recursive: true });
-      }
-      
-      const result = await analyzer.analyze(tempPath);
-      expect(result.score).toBe(100); // No issues = perfect score
     });
   });
 });

@@ -1,7 +1,81 @@
 /**
  * Core types for dev-optimizer
+ * Based on docs/finding-schema.md
  */
+export type Domain = 'ci' | 'deps' | 'docker';
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
+export type Confidence = 'high' | 'medium' | 'low';
+export type ImpactType = 'time' | 'size' | 'cost';
+export interface Evidence {
+    file?: string;
+    line?: number;
+    snippet?: string;
+    metrics?: Record<string, number>;
+}
+export interface Impact {
+    type: ImpactType;
+    estimate: string;
+    confidence: Confidence;
+}
+export interface SuggestedFix {
+    type: 'create' | 'modify' | 'delete';
+    file: string;
+    description: string;
+    diff?: string;
+    autoFixable: boolean;
+}
+export interface Finding {
+    id: string;
+    domain: Domain;
+    title: string;
+    description: string;
+    evidence: Evidence;
+    severity: Severity;
+    confidence: Confidence;
+    impact: Impact;
+    suggestedFix: SuggestedFix;
+    autoFixSafe: boolean;
+}
+export interface AnalysisResult {
+    analyzer: Domain;
+    score: number;
+    findings: Finding[];
+    baseline: Baseline;
+    savings: Savings;
+}
+export interface Baseline {
+    projectType: string;
+    hasPackageJson: boolean;
+    hasDockerfile: boolean;
+    hasCi: boolean;
+    dependencyCount: number;
+    dockerImageSize?: number;
+    ciTotalTime?: number;
+    nodeModulesSizeMB?: number;
+}
+export interface Savings {
+    timeSeconds: number;
+    sizeMB: number;
+    percentImprovement: number;
+    monthlyCostEstimate?: number;
+}
+export interface FullReport {
+    timestamp: string;
+    path: string;
+    version: string;
+    baseline: Baseline;
+    findings: Finding[];
+    topFindings: Finding[];
+    quickWins: Finding[];
+    manualReview: Finding[];
+    totalSavings: Savings;
+    score: number;
+}
+export interface Analyzer {
+    name: Domain;
+    analyze(path: string): Promise<AnalysisResult>;
+    isApplicable(path: string): Promise<boolean>;
+}
 export interface Issue {
     type: string;
     severity: Severity;
@@ -59,71 +133,33 @@ export interface Metrics {
     bundle?: BundleMetrics;
     security?: SecurityMetrics;
 }
-export interface Savings {
-    sizeMB: number;
-    timeSeconds: number;
-    percentImprovement: number;
-}
-export interface AnalysisResult {
-    analyzer: string;
-    score: number;
-    issues: Issue[];
-    suggestions: Suggestion[];
-    metrics: Metrics;
-    savings: Savings;
-}
-export interface FullReport {
-    timestamp: string;
-    path: string;
-    docker?: AnalysisResult;
-    npm?: AnalysisResult;
-    ci?: AnalysisResult;
-    bundle?: AnalysisResult;
-    security?: AnalysisResult;
-    overallScore: number;
-    totalSavings: Savings;
-}
-export interface FixAction {
-    type: string;
-    file: string;
-    description: string;
-    safe: boolean;
-    applied: boolean;
-    error?: string;
-}
-export interface FixResult {
-    timestamp: string;
-    path: string;
-    actions: FixAction[];
-    totalApplied: number;
-    totalSkipped: number;
-    errors: string[];
-}
-export interface DevOptimizerConfig {
-    path: string;
-    analyzers: ('docker' | 'npm' | 'ci' | 'bundle' | 'security')[];
-    output: 'console' | 'json' | 'markdown';
-    safeOnly: boolean;
-    dryRun: boolean;
-}
-export interface Analyzer {
-    name: string;
-    analyze(path: string): Promise<AnalysisResult>;
-    isApplicable(path: string): Promise<boolean>;
-}
 export interface Fixer {
     name: string;
-    canFix(issue: Issue): boolean;
-    fix(issue: Issue, options: FixOptions): Promise<FixResult>;
-    isSafe(issue: Issue): boolean;
+    canFix(finding: Finding): boolean;
+    fix(finding: Finding, options: FixOptions): Promise<FixResult>;
+    isSafe(finding: Finding): boolean;
 }
 export interface FixOptions {
-    safeOnly: boolean;
     dryRun: boolean;
     backup: boolean;
+    path: string;
+}
+export interface FixResult {
+    findingId: string;
+    applied: boolean;
+    file: string;
+    diff?: string;
+    error?: string;
 }
 export interface Reporter {
     format(report: FullReport): string;
     getExtension(): string;
+}
+export interface DevOptimizerConfig {
+    path: string;
+    domains: Domain[];
+    output: 'table' | 'json' | 'markdown';
+    dryRun: boolean;
+    safeOnly: boolean;
 }
 //# sourceMappingURL=types.d.ts.map

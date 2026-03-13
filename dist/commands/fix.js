@@ -5,7 +5,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { DockerAnalyzer } from '../analyzers/DockerAnalyzer.js';
-import { NpmAnalyzer } from '../analyzers/NpmAnalyzer.js';
+import { DepsAnalyzer } from '../analyzers/DepsAnalyzer.js';
+import { CiAnalyzer } from '../analyzers/CiAnalyzer.js';
 export async function fixCommand(options) {
     const projectPath = path.resolve(options.path);
     if (!fs.existsSync(projectPath)) {
@@ -14,119 +15,100 @@ export async function fixCommand(options) {
     }
     console.log(`Analyzing: ${projectPath}\n`);
     console.log(`Mode: ${options.dryRun ? 'dry-run (no changes)' : 'apply fixes'}\n`);
-    console.log(`Safety: ${options.safe ? 'safe fixes only' : 'all fixes'}\n`);
-    const actions = [];
-    // Docker fixes
+    console.log(`Safety: ${options.safe !== false ? 'safe fixes only' : 'all fixes'}\n`);
+    const results = [];
+    // Run analyzers and collect auto-fixable findings
     const dockerAnalyzer = new DockerAnalyzer();
-    if (await dockerAnalyzer.isApplicable(projectPath)) {
-        const result = await dockerAnalyzer.analyze(projectPath);
-        for (const suggestion of result.suggestions) {
-            if (options.safe && !suggestion.safe) {
-                console.log(`Skipping (unsafe): ${suggestion.description}`);
-                continue;
-            }
-            if (suggestion.autoFix) {
-                const action = await applyDockerFix(projectPath, suggestion.type, options.dryRun);
-                if (action) {
-                    actions.push(action);
-                }
-            }
+    const depsAnalyzer = new DepsAnalyzer();
+    const ciAnalyzer = new CiAnalyzer();
+    const analyzers = [dockerAnalyzer, depsAnalyzer, ciAnalyzer];
+    const allFindings = [];
+    for (const analyzer of analyzers) {
+        if (await analyzer.isApplicable(projectPath)) {
+            console.log(`Running ${analyzer.name} analysis...`);
+            const result = await analyzer.analyze(projectPath);
+            allFindings.push(...result.findings);
         }
     }
-    // npm fixes
-    const npmAnalyzer = new NpmAnalyzer();
-    if (await npmAnalyzer.isApplicable(projectPath)) {
-        const result = await npmAnalyzer.analyze(projectPath);
-        for (const suggestion of result.suggestions) {
-            if (options.safe && !suggestion.safe) {
-                console.log(`Skipping (unsafe): ${suggestion.description}`);
-                continue;
-            }
-            if (suggestion.autoFix) {
-                const action = await applyNpmFix(projectPath, suggestion.type, options.dryRun);
-                if (action) {
-                    actions.push(action);
-                }
+    // Filter auto-fixable findings
+    const autoFixable = allFindings.filter(f => f.autoFixSafe && f.suggestedFix.autoFixable);
+    console.log(`Found ${autoFixable.length} auto-fixable issues\n`);
+    for (const finding of autoFixable) {
+        if (options.safe && !finding.autoFixSafe) {
+            console.log(`Skipping (unsafe): ${finding.title}`);
+            continue;
+        }
+        const result = await applyFix(projectPath, finding, options.dryRun);
+        results.push(result);
+        if (result.applied) {
+            console.log(`✅ Applied: ${finding.title}`);
+        }
+        else if (options.dryRun) {
+            console.log(`📝 Would apply: ${finding.title}`);
+            if (finding.suggestedFix.diff) {
+                console.log(`\n${finding.suggestedFix.diff}\n`);
             }
         }
     }
     // Summary
     console.log('\n' + '═'.repeat(50));
-    console.log(`Total actions: ${actions.length}`);
-    console.log(`Applied: ${actions.filter(a => a.applied).length}`);
-    console.log(`Skipped: ${actions.filter(a => !a.applied).length}`);
+    console.log(`Total findings: ${allFindings.length}`);
+    console.log(`Auto-fixable: ${autoFixable.length}`);
+    console.log(`Applied: ${results.filter(r => r.applied).length}`);
+    console.log(`Skipped: ${results.filter(r => !r.applied).length}`);
     if (options.dryRun) {
         console.log('\nThis was a dry-run. No changes were made.');
         console.log('Run without --dry-run to apply changes.');
     }
 }
-async function applyDockerFix(projectPath, fixType, dryRun) {
-    if (fixType === 'create_dockerignore') {
-        const dockerignorePath = path.join(projectPath, '.dockerignore');
-        if (fs.existsSync(dockerignorePath)) {
-            return null; // Already exists
+async function applyFix(projectPath, finding, dryRun) {
+    const fix = finding.suggestedFix;
+    const filePath = path.join(projectPath, fix.file);
+    try {
+        // Create file
+        if (fix.type === 'create') {
+            if (fs.existsSync(filePath) && !dryRun) {
+                return {
+                    findingId: finding.id,
+                    applied: false,
+                    file: fix.file,
+                    error: 'File already exists'
+                };
+            }
+            if (!dryRun && fix.diff) {
+                fs.writeFileSync(filePath, fix.diff);
+            }
+            return {
+                findingId: finding.id,
+                applied: !dryRun,
+                file: fix.file,
+                diff: fix.diff
+            };
         }
-        const content = `# Dependencies
-node_modules
-npm-debug.log
-yarn-error.log
-yarn.lock
-package-lock.json
-
-# Build outputs
-dist
-build
-.next
-out
-
-# Development
-.git
-.gitignore
-.vscode
-.idea
-
-# Environment
-.env
-.env.local
-.env.*.local
-
-# Tests
-coverage
-.nyc_output
-*.test.js
-*.spec.js
-
-# Misc
-*.log
-*.tmp
-.DS_Store
-Thumbs.db
-`;
-        if (!dryRun) {
-            fs.writeFileSync(dockerignorePath, content);
+        // Modify file (requires manual review in most cases)
+        if (fix.type === 'modify') {
+            // For now, just return the diff for review
+            return {
+                findingId: finding.id,
+                applied: false,
+                file: fix.file,
+                diff: fix.diff
+            };
         }
+        // Delete file (rare, requires manual review)
         return {
-            type: 'create_dockerignore',
-            file: dockerignorePath,
-            description: 'Created .dockerignore with common patterns',
-            safe: true,
-            applied: !dryRun
+            findingId: finding.id,
+            applied: false,
+            file: fix.file
         };
     }
-    return null;
-}
-async function applyNpmFix(projectPath, fixType, dryRun) {
-    if (fixType === 'remove_unused_deps') {
-        // Would run npx depcheck and remove unused deps
-        // This is a simplified version
+    catch (error) {
         return {
-            type: 'remove_unused_deps',
-            file: path.join(projectPath, 'package.json'),
-            description: 'Remove unused dependencies (requires review)',
-            safe: false, // Should be reviewed before applying
-            applied: false
+            findingId: finding.id,
+            applied: false,
+            file: fix.file,
+            error: String(error)
         };
     }
-    return null;
 }
 //# sourceMappingURL=fix.js.map

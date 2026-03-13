@@ -4,32 +4,14 @@
  */
 
 import { DockerAnalyzer } from '../../src/analyzers/DockerAnalyzer.js';
-import { NpmAnalyzer } from '../../src/analyzers/NpmAnalyzer.js';
-import * as childProcess from 'child_process';
+import { DepsAnalyzer } from '../../src/analyzers/DepsAnalyzer.js';
+import { CiAnalyzer } from '../../src/analyzers/CiAnalyzer.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// Test repositories with known issues
-const TEST_REPOS = [
-  {
-    name: 'nginx-proxy-manager-issue',
-    repo: 'https://github.com/NginxProxyManager/nginx-proxy-manager.git',
-    issue: '1.1 GB Docker image',
-    expectedImprovement: '60%',
-    skip: true // Too large to clone in CI
-  },
-  {
-    name: 'create-react-app',
-    command: 'npx create-react-app test-react-app --template typescript',
-    issue: 'Large node_modules',
-    expectedImprovement: '30%',
-    cleanup: true
-  }
-];
 
 describe('Integration Tests', () => {
   beforeAll(() => {
@@ -50,119 +32,76 @@ describe('Integration Tests', () => {
 
   describe('DockerAnalyzer on real projects', () => {
     it('should analyze Dockerfile in current project', async () => {
-      // Use this project as test
       const projectPath = path.join(__dirname, '../../');
       const analyzer = new DockerAnalyzer();
       
       const isApplicable = await analyzer.isApplicable(projectPath);
-      
-      // This project may not have a Dockerfile
-      // Just check that the analyzer doesn't crash
       expect(typeof isApplicable).toBe('boolean');
     });
   });
 
-  describe('NpmAnalyzer on real projects', () => {
+  describe('DepsAnalyzer on real projects', () => {
     it('should analyze package.json in current project', async () => {
       const projectPath = path.join(__dirname, '../../');
-      const analyzer = new NpmAnalyzer();
+      const analyzer = new DepsAnalyzer();
       
       const isApplicable = await analyzer.isApplicable(projectPath);
       expect(isApplicable).toBe(true);
       
       const result = await analyzer.analyze(projectPath);
       
+      expect(result).toHaveProperty('analyzer', 'deps');
+      expect(result).toHaveProperty('findings');
       expect(result).toHaveProperty('score');
-      expect(result).toHaveProperty('issues');
-      expect(result).toHaveProperty('metrics');
-      expect(result).toHaveProperty('savings');
+      expect(result).toHaveProperty('baseline');
+      expect(result.findings).toBeInstanceOf(Array);
     });
   });
 
-  // Skip slow tests by default
-  describe.skip('External repository tests', () => {
-    for (const repo of TEST_REPOS) {
-      if (repo.skip) continue;
-
-      it(`should analyze ${repo.name}`, async () => {
-        const testDir = path.join(__dirname, '../fixtures/integration', repo.name);
-        
-        // Clone or create project
-        if (repo.repo) {
-          childProcess.execSync(`git clone ${repo.repo} ${testDir}`, {
-            stdio: 'inherit'
-          });
-        } else if (repo.command) {
-          childProcess.execSync(repo.command, {
-            cwd: path.join(__dirname, '../fixtures/integration'),
-            stdio: 'inherit'
-          });
-        }
-
-        // Run analyzer
-        const analyzer = repo.repo?.includes('Docker') 
-          ? new DockerAnalyzer() 
-          : new NpmAnalyzer();
-        
-        const result = await analyzer.analyze(testDir);
-        
-        // Verify expected improvement
-        expect(result.savings.percentImprovement).toBeGreaterThanOrEqual(
-          parseInt(repo.expectedImprovement)
-        );
-
-        // Cleanup
-        if (repo.cleanup && fs.existsSync(testDir)) {
-          fs.rmSync(testDir, { recursive: true, force: true });
-        }
-      }, 120000); // 2 minute timeout for network operations
-    }
+  describe('CiAnalyzer on real projects', () => {
+    it('should analyze CI config in current project', async () => {
+      const projectPath = path.join(__dirname, '../../');
+      const analyzer = new CiAnalyzer();
+      
+      const isApplicable = await analyzer.isApplicable(projectPath);
+      expect(typeof isApplicable).toBe('boolean');
+    });
   });
-});
 
-describe('Metrics Comparison', () => {
-  it('should compare before and after metrics', () => {
-    const baseline = {
-      docker: {
-        imageSize: 1200,
-        buildTime: 180,
-        layerCount: 15,
-        contextSize: 100
-      },
-      npm: {
-        installTimeCold: 45,
-        installTimeCached: 8,
-        nodeModulesSize: 450,
-        totalDeps: 45,
-        unusedDeps: 12,
-        outdatedDeps: 8
+  describe('Finding Schema Validation', () => {
+    it('should return correct Finding structure from all analyzers', async () => {
+      const projectPath = path.join(__dirname, '../../');
+      
+      const analyzers = [
+        new DockerAnalyzer(),
+        new DepsAnalyzer(),
+        new CiAnalyzer()
+      ];
+
+      for (const analyzer of analyzers) {
+        if (await analyzer.isApplicable(projectPath)) {
+          const result = await analyzer.analyze(projectPath);
+          
+          // Check Finding schema
+          for (const finding of result.findings) {
+            expect(finding).toHaveProperty('id');
+            expect(finding).toHaveProperty('domain');
+            expect(finding).toHaveProperty('title');
+            expect(finding).toHaveProperty('description');
+            expect(finding).toHaveProperty('evidence');
+            expect(finding).toHaveProperty('severity');
+            expect(finding).toHaveProperty('confidence');
+            expect(finding).toHaveProperty('impact');
+            expect(finding).toHaveProperty('suggestedFix');
+            expect(finding).toHaveProperty('autoFixSafe');
+            
+            // Validate enums
+            expect(['docker', 'deps', 'ci']).toContain(finding.domain);
+            expect(['critical', 'high', 'medium', 'low']).toContain(finding.severity);
+            expect(['high', 'medium', 'low']).toContain(finding.confidence);
+          }
+        }
       }
-    };
-
-    const current = {
-      docker: {
-        imageSize: 400,
-        buildTime: 60,
-        layerCount: 8,
-        contextSize: 50
-      },
-      npm: {
-        installTimeCold: 15,
-        installTimeCached: 3,
-        nodeModulesSize: 280,
-        totalDeps: 33,
-        unusedDeps: 0,
-        outdatedDeps: 0
-      }
-    };
-
-    // Docker improvements
-    expect(current.docker.imageSize).toBeLessThan(baseline.docker.imageSize);
-    expect(current.docker.buildTime).toBeLessThan(baseline.docker.buildTime);
-    
-    // npm improvements
-    expect(current.npm.nodeModulesSize).toBeLessThan(baseline.npm.nodeModulesSize);
-    expect(current.npm.totalDeps).toBeLessThan(baseline.npm.totalDeps);
-    expect(current.npm.unusedDeps).toBe(0);
+    });
   });
 });

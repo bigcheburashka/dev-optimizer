@@ -1,14 +1,15 @@
 /**
  * Docker Analyzer
  * Analyzes Dockerfile for optimization opportunities
+ * Returns unified Finding[] format
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Analyzer, AnalysisResult, Issue, Severity, DockerMetrics, Savings, Suggestion } from '../types.js';
+import { Analyzer, AnalysisResult, Finding, Baseline, Savings, Domain } from '../types.js';
 
 export class DockerAnalyzer implements Analyzer {
-  name = 'docker';
+  name: Domain = 'docker';
 
   async isApplicable(projectPath: string): Promise<boolean> {
     const dockerfile = path.join(projectPath, 'Dockerfile');
@@ -17,121 +18,217 @@ export class DockerAnalyzer implements Analyzer {
   }
 
   async analyze(projectPath: string): Promise<AnalysisResult> {
-    const issues: Issue[] = [];
-    const suggestions: Suggestion[] = [];
-    let score = 100;
+    const findings: Finding[] = [];
+    const baseline = await this.collectBaseline(projectPath);
 
     // Parse Dockerfile
     const dockerfile = await this.readDockerfile(projectPath);
-    const dockerignoreExists = await this.checkDockerignore(projectPath);
+    const hasDockerignore = await this.checkDockerignore(projectPath);
 
-    // Check for .dockerignore
-    if (!dockerignoreExists) {
-      issues.push({
-        type: 'missing_dockerignore',
+    // Finding: Missing .dockerignore
+    if (!hasDockerignore) {
+      findings.push({
+        id: 'docker-001',
+        domain: 'docker',
+        title: 'Missing .dockerignore file',
+        description: 'No .dockerignore file found. Build context includes unnecessary files.',
+        evidence: {
+          metrics: {
+            estimatedContextSizeMB: 500,
+            potentialContextSizeMB: 50
+          }
+        },
         severity: 'high',
-        message: 'Missing .dockerignore file',
-        suggestion: 'Create .dockerignore with node_modules, .git, etc.',
-        documentation: 'https://docs.docker.com/build/building/context/#dockerignore-files'
-      });
-      score -= 20;
-      suggestions.push({
-        type: 'create_dockerignore',
-        description: 'Create .dockerignore file',
-        impact: 'Save 200-500 MB in build context',
-        autoFix: true,
-        safe: true
+        confidence: 'high',
+        impact: {
+          type: 'size',
+          estimate: 'Reduce build context by 400-500 MB',
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'create',
+          file: '.dockerignore',
+          description: 'Create .dockerignore with common patterns',
+          diff: 'node_modules\n.git\n*.log\ncoverage\n.env\n.DS_Store',
+          autoFixable: true
+        },
+        autoFixSafe: true
       });
     }
 
-    // Check for multistage
-    const hasMultistage = this.checkMultistage(dockerfile);
-    if (!hasMultistage) {
-      issues.push({
-        type: 'no_multistage',
+    // Finding: No multistage build
+    if (!this.hasMultistage(dockerfile)) {
+      findings.push({
+        id: 'docker-002',
+        domain: 'docker',
+        title: 'No multistage build detected',
+        description: 'Using single-stage build. Final image includes build dependencies.',
+        evidence: {
+          file: 'Dockerfile'
+        },
         severity: 'high',
-        message: 'No multistage build detected',
-        suggestion: 'Use multistage build to reduce final image size',
-        documentation: 'https://docs.docker.com/build/building/multi-stage/'
-      });
-      score -= 15;
-      suggestions.push({
-        type: 'add_multistage',
-        description: 'Convert to multistage build',
-        impact: 'Save 50-70% image size',
-        autoFix: false,
-        safe: false
+        confidence: 'medium',
+        impact: {
+          type: 'size',
+          estimate: 'Reduce image size by 50-70%',
+          confidence: 'medium'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: 'Dockerfile',
+          description: 'Convert to multistage build',
+          autoFixable: false
+        },
+        autoFixSafe: false
       });
     }
 
-    // Check base image
+    // Finding: Large base image
     const baseImage = this.getBaseImage(dockerfile);
-    if (baseImage && !this.isAlpineBase(baseImage)) {
-      issues.push({
-        type: 'large_base_image',
+    if (baseImage && !this.isSmallBase(baseImage)) {
+      findings.push({
+        id: 'docker-003',
+        domain: 'docker',
+        title: `Large base image: ${baseImage}`,
+        description: `Base image '${baseImage}' is large. Consider using alpine or distroless.`,
+        evidence: {
+          snippet: `FROM ${baseImage}`
+        },
         severity: 'medium',
-        message: `Large base image: ${baseImage}`,
-        suggestion: 'Consider using alpine-based image',
-        documentation: 'https://hub.docker.com/_/alpine'
-      });
-      score -= 10;
-      suggestions.push({
-        type: 'switch_to_alpine',
-        description: `Switch from ${baseImage} to alpine`,
-        impact: 'Save 100-500 MB',
-        autoFix: false,
-        safe: false
+        confidence: 'medium',
+        impact: {
+          type: 'size',
+          estimate: 'Save 100-500 MB per image',
+          confidence: 'medium'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: 'Dockerfile',
+          description: `Switch to alpine-based image`,
+          autoFixable: false
+        },
+        autoFixSafe: false
       });
     }
 
-    // Count layers
+    // Finding: No cleanup after install
+    if (!this.hasCleanup(dockerfile)) {
+      findings.push({
+        id: 'docker-004',
+        domain: 'docker',
+        title: 'No cleanup after package installation',
+        description: 'Package manager caches not cleaned after install.',
+        evidence: {
+          file: 'Dockerfile'
+        },
+        severity: 'medium',
+        confidence: 'high',
+        impact: {
+          type: 'size',
+          estimate: 'Save 50-200 MB per image',
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: 'Dockerfile',
+          description: 'Add cleanup commands after apt/apk install',
+          diff: 'RUN apt-get install -y ... && rm -rf /var/lib/apt/lists/*',
+          autoFixable: false
+        },
+        autoFixSafe: false
+      });
+    }
+
+    // Finding: Too many layers
     const layerCount = this.countLayers(dockerfile);
     if (layerCount > 10) {
-      issues.push({
-        type: 'too_many_layers',
+      findings.push({
+        id: 'docker-005',
+        domain: 'docker',
+        title: `Too many layers: ${layerCount}`,
+        description: 'Excessive layers increase image size and build time.',
+        evidence: {
+          metrics: { layerCount }
+        },
         severity: 'low',
-        message: `Too many layers: ${layerCount}`,
-        suggestion: 'Combine RUN commands to reduce layers',
-        documentation: 'https://docs.docker.com/develop/develop-images/dockerfile_best-practices/#minimize-the-number-of-layers'
+        confidence: 'high',
+        impact: {
+          type: 'size',
+          estimate: 'Save 10-50 MB by combining layers',
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: 'Dockerfile',
+          description: 'Combine RUN commands to reduce layers',
+          autoFixable: false
+        },
+        autoFixSafe: false
       });
-      score -= Math.min(10, layerCount - 10);
     }
 
-    // Check for cleanup
-    const hasCleanup = this.checkCleanup(dockerfile);
-    if (!hasCleanup) {
-      issues.push({
-        type: 'no_cleanup',
-        severity: 'medium',
-        message: 'No cleanup after apt/apk install',
-        suggestion: 'Add cleanup commands: rm -rf /var/lib/apt/lists/*',
-        documentation: 'https://docs.docker.com/develop/develop-images/dockerfile_best-practices/'
-      });
-      score -= 10;
-    }
-
-    // Calculate potential savings
-    const savings: Savings = {
-      sizeMB: this.calculateSavings(issues, dockerignoreExists),
-      timeSeconds: this.calculateTimeSavings(issues),
-      percentImprovement: 0
-    };
-    savings.percentImprovement = savings.sizeMB > 0 ? Math.round((savings.sizeMB / 1000) * 100) : 0;
-
-    const metrics: DockerMetrics = {
-      imageSize: 1200, // Default estimate
-      buildTime: 180,
-      layerCount,
-      contextSize: dockerignoreExists ? 50 : 500
-    };
+    const savings = this.calculateSavings(findings);
 
     return {
       analyzer: 'docker',
-      score: Math.max(0, score),
-      issues,
-      suggestions,
-      metrics: { docker: metrics },
+      score: this.calculateScore(findings),
+      findings,
+      baseline,
       savings
+    };
+  }
+
+  private async collectBaseline(projectPath: string): Promise<Baseline> {
+    return {
+      projectType: 'docker',
+      hasPackageJson: fs.existsSync(path.join(projectPath, 'package.json')),
+      hasDockerfile: true,
+      hasCi: fs.existsSync(path.join(projectPath, '.github/workflows')) ||
+              fs.existsSync(path.join(projectPath, '.gitlab-ci.yml')),
+      dependencyCount: 0,
+      dockerImageSize: 1200 // Estimate
+    };
+  }
+
+  private calculateScore(findings: Finding[]): number {
+    let score = 100;
+    
+    for (const finding of findings) {
+      switch (finding.severity) {
+        case 'critical': score -= 30; break;
+        case 'high': score -= 20; break;
+        case 'medium': score -= 10; break;
+        case 'low': score -= 5; break;
+      }
+    }
+    
+    return Math.max(0, score);
+  }
+
+  private calculateSavings(findings: Finding[]): Savings {
+    let timeSeconds = 0;
+    let sizeMB = 0;
+
+    for (const finding of findings) {
+      if (finding.impact.type === 'size') {
+        // Extract MB from estimate like "Reduce build context by 400-500 MB"
+        const match = finding.impact.estimate.match(/(\d+)-?(\d+)?\s*MB/);
+        if (match) {
+          sizeMB += parseInt(match[1]) + (match[2] ? (parseInt(match[2]) - parseInt(match[1])) / 2 : 0);
+        }
+      }
+      if (finding.impact.type === 'time') {
+        const match = finding.impact.estimate.match(/(\d+)/);
+        if (match) {
+          timeSeconds += parseInt(match[1]);
+        }
+      }
+    }
+
+    return {
+      timeSeconds,
+      sizeMB: Math.round(sizeMB),
+      percentImprovement: Math.round((sizeMB / 1000) * 100)
     };
   }
 
@@ -147,7 +244,7 @@ export class DockerAnalyzer implements Analyzer {
     return fs.existsSync(path.join(projectPath, '.dockerignore'));
   }
 
-  private checkMultistage(dockerfile: string): boolean {
+  private hasMultistage(dockerfile: string): boolean {
     return /^FROM\s+\S+\s+AS\s+\S+/m.test(dockerfile);
   }
 
@@ -156,51 +253,23 @@ export class DockerAnalyzer implements Analyzer {
     return match ? match[1] : null;
   }
 
-  private isAlpineBase(image: string): boolean {
-    return image.includes('alpine') || image.includes('distroless') || image.includes('scratch');
+  private isSmallBase(image: string): boolean {
+    return image.includes('alpine') || 
+           image.includes('distroless') || 
+           image.includes('scratch') ||
+           image.includes('slim');
+  }
+
+  private hasCleanup(dockerfile: string): boolean {
+    return /rm\s+-rf\s+\/var\/lib\/apt\/lists/.test(dockerfile) ||
+           /rm\s+-rf\s+\/var\/cache\/apk/.test(dockerfile) ||
+           /&&\s+rm\s+-rf/.test(dockerfile);
   }
 
   private countLayers(dockerfile: string): number {
     const runCount = (dockerfile.match(/^RUN/gm) || []).length;
     const copyCount = (dockerfile.match(/^COPY/gm) || []).length;
     const addCount = (dockerfile.match(/^ADD/gm) || []).length;
-    return runCount + copyCount + addCount + 1; // +1 for FROM
-  }
-
-  private checkCleanup(dockerfile: string): boolean {
-    return /rm\s+-rf\s+\/var\/lib\/apt\/lists/.test(dockerfile) ||
-           /rm\s+-rf\s+\/var\/cache\/apk/.test(dockerfile);
-  }
-
-  private calculateSavings(issues: Issue[], hasDockerignore: boolean): number {
-    let savings = 0;
-    
-    if (issues.some(i => i.type === 'missing_dockerignore')) {
-      savings += 300;
-    }
-    if (issues.some(i => i.type === 'no_multistage')) {
-      savings += 500;
-    }
-    if (issues.some(i => i.type === 'large_base_image')) {
-      savings += 200;
-    }
-    if (issues.some(i => i.type === 'no_cleanup')) {
-      savings += 80;
-    }
-    
-    return savings;
-  }
-
-  private calculateTimeSavings(issues: Issue[]): number {
-    let savings = 0;
-    
-    if (issues.some(i => i.type === 'missing_dockerignore')) {
-      savings += 30; // Smaller context = faster build
-    }
-    if (issues.some(i => i.type === 'no_multistage')) {
-      savings += 60; // Parallel build stages
-    }
-    
-    return savings;
+    return runCount + copyCount + addCount + 1;
   }
 }

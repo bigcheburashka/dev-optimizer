@@ -5,9 +5,10 @@
 import { FullReport } from '../types.js';
 export declare class ConsoleReporter {
     format(report: FullReport): string;
-    private formatSection;
+    private formatFinding;
+    private formatFindingsList;
     private getScoreColor;
     private getSeverityColor;
-    private getEmoji;
+    getExtension(): string;
 }
 //# sourceMappingURL=ConsoleReporter.d.ts.map
