@@ -8,59 +8,68 @@
 
 ## Product Stages (GPT Plan)
 
-### Stage 1: CLI + GitHub Action (CURRENT)
-- ✅ CLI analyze command
-- ✅ 3 domains (Docker, Deps, CI)
-- ✅ Console + Markdown reports
-- ✅ Safe auto-fixes
-- ⏳ GitHub Action for PR comments
+### Stage 1: CLI + GitHub Action ✅ COMPLETE
 
-### Stage 2: Cloud Dashboard
-- ⏳ Baseline persistence
-- ⏳ History & regression tracking
-- ⏳ Team dashboard
-- ⏳ ROI calculator ($)
+| Feature | Status |
+|---------|--------|
+| CLI analyze command | ✅ Done |
+| 3 domains (Docker, Deps, CI) | ✅ Done |
+| Console + Markdown reports | ✅ Done |
+| Safe auto-fixes | ✅ Done |
+| GitHub Action for PR comments | ✅ Done |
+| Extended analyzers | ✅ Done |
+
+### Stage 2: Cloud Dashboard ⏳ NEXT
+
+| Feature | Status |
+|---------|--------|
+| Baseline persistence | ✅ Done |
+| History & regression tracking | ✅ Done |
+| Team dashboard | ❌ Todo |
+| ROI calculator ($) | ❌ Todo |
 
 ### Stage 3: Autofix PRs
+
 - ⏳ Safe-first patches
 - ⏳ Validation pipeline
 - ⏳ Bot for auto-fixes
 
 ### Stage 4: Enterprise
+
 - ⏳ Org policies
 - ⏳ Private deployment
 - ⏳ SSO/SAML
 
 ---
 
-## Current Status (2026-03-13)
+## Current Status (2026-03-13 22:40 UTC)
 
-### ✅ Complete
-
-| Component | Tests | Status |
-|-----------|-------|--------|
-| DockerAnalyzer | 11 | ✅ Production ready |
-| CiAnalyzer | 8 | ✅ Production ready |
-| DepsAnalyzer | 11 | ✅ Production ready |
-| RepoScanner | 13 | ✅ Production ready |
-| Fix command | 12 | ✅ Production ready |
-| BaselineManager | 11 | ✅ Production ready |
-| ConsoleReporter | - | ✅ Works |
-| MarkdownReporter | - | ✅ Works |
-| **Total** | **59** | ✅ |
-
-### Git: 14 commits
+### Git: 22 commits
 
 ```
-81a8948 - Fix score calculation
-e2b8d60 - Fix BaselineManager tests
-5788877 - Add BaselineManager
-40584cd - Add demo repos
-7da01c2 - Implement fix command
+b5a5839 - Update ROADMAP
+d43a76c - Add DockerAnalyzer extensions
+7cf9f25 - Add CiAnalyzer extensions
+3185955 - Expand DepsAnalyzer
+fb871a9 - Add MIT License
+66c210e - Remove node_modules
+35eade8 - Add CI workflow
+8d2de3e - Add GitHub Action
 ...
 ```
 
-### Tested on Real Repos
+### Tests: 59 passing
+
+| Component | Tests | Status |
+|-----------|-------|--------|
+| DockerAnalyzer | 11 | ✅ Extended (+4 checks) |
+| CiAnalyzer | 8 | ✅ Extended (+3 checks) |
+| DepsAnalyzer | 11 | ✅ Extended (+3 checks) |
+| RepoScanner | 13 | ✅ Done |
+| Fix command | 12 | ✅ Done |
+| BaselineManager | 11 | ✅ Done |
+
+### Real Repo Testing
 
 | Repository | Score | Findings |
 |------------|-------|----------|
@@ -69,91 +78,112 @@ e2b8d60 - Fix BaselineManager tests
 
 ---
 
-## MVP Scope (Done)
+## Analyzer Coverage
 
-### ✅ 3 Domains
+### Docker (9 checks)
 
-| Domain | Analysis | Auto-fix |
-|--------|----------|----------|
-| **CI/CD** | GitHub Actions: cache, timeout, matrix | Add cache via setup-node |
-| **Dependencies** | unused (knip), duplicates, lockfile | Remove unused (high conf) |
-| **Docker** | .dockerignore, multistage, base image | Create .dockerignore |
+| ID | Finding | Mode |
+|----|---------|------|
+| docker-001 | Missing .dockerignore | Quick |
+| docker-002 | No multistage build | Quick |
+| docker-003 | Large base image | Quick |
+| docker-004 | No cleanup after install | Quick |
+| docker-005 | Too many layers | Quick |
+| docker-006 | Running as root | Quick |
+| docker-007 | Consecutive RUN commands | Quick |
+| docker-008 | ADD instead of COPY | Quick |
+| docker-009 | Use WORKDIR | Quick |
+| docker-hadolint-* | Hadolint violations | Full |
 
-### ✅ CLI Commands
+### CI/CD (8 checks)
 
-| Command | Status |
-|---------|--------|
-| `analyze` | ✅ Works |
-| `analyze --type docker/deps/ci` | ✅ Works |
-| `analyze --format json/markdown` | ✅ Works |
-| `fix --dry-run` | ✅ Works |
-| `fix --safe` | ✅ Works |
-| `baseline --save` | ✅ Works |
-| `baseline --compare` | ✅ Works |
-| `baseline --history` | ✅ Works |
+| ID | Finding | Mode |
+|----|---------|------|
+| ci-001 | Invalid YAML | Quick |
+| ci-002 | No caching configured | Quick |
+| ci-003 | No matrix strategy | Quick |
+| ci-004 | No timeout configured | Quick |
+| ci-005 | Sequential jobs | Quick |
+| ci-006 | Artifact retention | Quick |
+| ci-007 | Self-hosted runners | Full |
+| ci-008 | Duplicate jobs | Quick |
 
-### ✅ Output Formats
+### Dependencies (11 checks)
 
-| Format | Status |
-|--------|--------|
-| Console (table) | ✅ Works |
-| Markdown | ✅ Works |
-| JSON | ✅ Works |
+| ID | Finding | Mode |
+|----|---------|------|
+| deps-001 | Unused dependency | Quick |
+| deps-002 | Duplicate dependency | Quick |
+| deps-003 | Missing lockfile | Quick |
+| deps-006 | Unused export | Quick |
+| deps-007 | Large node_modules | Quick |
+| deps-008 | Many dependencies | Quick |
+| deps-009 | Deprecated package | Quick |
+| deps-010 | Outdated package | Full |
+| deps-011 | Security vulnerability | Full |
 
 ---
 
-## Production Readiness Checklist
+## CLI Commands
 
-### Must Have (MVP)
+```bash
+# Analysis
+dev-optimizer analyze                    # All domains, full mode
+dev-optimizer analyze --quick            # Quick mode (~5 sec)
+dev-optimizer analyze --deep             # Deep mode (~2 min)
+dev-optimizer analyze --type docker     # Only Docker
+dev-optimizer analyze --type deps        # Only Dependencies
+dev-optimizer analyze --type ci          # Only CI/CD
+dev-optimizer analyze --format markdown  # PR-ready report
 
-| Item | Status | Notes |
-|------|--------|-------|
-| CLI works | ✅ | All commands tested |
-| 3 domains | ✅ | Docker, Deps, CI |
-| Safe fixes | ✅ | .dockerignore, cache |
-| Reports | ✅ | Console + MD + JSON |
-| Tests | ✅ | 59 passing |
-| Real repo testing | ✅ | nest, express |
-| Documentation | ✅ | README + docs/ |
-| Score calculation | ✅ | Fixed penalties |
-| Baseline persistence | ✅ | JSON storage |
+# Fixes
+dev-optimizer fix --dry-run              # Preview changes
+dev-optimizer fix --safe                 # Apply safe fixes
+
+# Baseline
+dev-optimizer baseline --save            # Save baseline
+dev-optimizer baseline --compare         # Compare with baseline
+dev-optimizer baseline --history         # View history
+```
+
+---
+
+## Production Readiness
+
+### Must Have ✅ DONE
+
+| Item | Status |
+|------|--------|
+| CLI works | ✅ |
+| 3 domains | ✅ |
+| Safe fixes | ✅ |
+| Reports | ✅ |
+| Tests | ✅ 59 |
+| Real repo testing | ✅ |
+| Documentation | ✅ |
+| Score calculation | ✅ |
+| Baseline persistence | ✅ |
+| GitHub Action | ✅ |
+| Extended analyzers | ✅ |
 
 ### Should Have (v1.1)
 
 | Item | Status | Notes |
 |------|--------|-------|
-| GitHub Action | ❌ | PR comments |
-| npm publish | ⏸️ | Deferred |
-| More findings | ❌ | outdated, audit, size |
+| npm publish | ⏸️ | Ready, deferred |
+| More test repos | ❌ | |
+| Video demo | ❌ | |
+| Landing page | ❌ | |
 
 ### Nice to Have (v2)
 
-| Item | Status | Notes |
-|------|--------|-------|
-| Dashboard | ❌ | SaaS |
-| ROI calculator | ❌ | $ estimates |
-| Team features | ❌ | Multi-repo |
-
----
-
-## Known Gaps & Limitations
-
-### Current Gaps
-
-| Gap | Impact | Solution |
-|-----|--------|----------|
-| Unused deps in libraries | Knip misses exports used externally | Add `--is-library` flag |
-| Outdated packages | Not checked | Add `npm outdated` check |
-| Security vulnerabilities | Not checked | Add `npm audit` integration |
-| Large dependencies | Not analyzed | Add bundlesize estimate |
-| Matrix optimization | Not analyzed | Add parallelization check |
-
-### Current Limitations
-
-1. **GitHub Actions only** — GitLab CI in Stage 2
-2. **JS/TS only** — Python, Go in Stage 3
-3. **Estimates not precise** — ROI estimates, not promises
-4. **Library detection** — Knip limitation for library exports
+| Item | Status |
+|------|--------|
+| Dashboard | ❌ |
+| ROI calculator | ❌ |
+| Team features | ❌ |
+| GitLab CI | ❌ |
+| Python/Go support | ❌ |
 
 ---
 
@@ -167,51 +197,40 @@ e2b8d60 - Fix BaselineManager tests
 
 ---
 
-## Next Steps (Priority Order)
+## Next Steps
 
-### 1. Gap Fixes (This Week)
+### Ready Now (Stage 1 Complete)
 
-| Task | Impact | Effort |
-|------|--------|--------|
-| Add `npm outdated` check | Medium | Low |
-| Add `npm audit` integration | Medium | Low |
-| Fix score formula | High | Done |
-| Test on more repos | Medium | Low |
+- ✅ All MVP features implemented
+- ✅ 59 tests passing
+- ✅ GitHub Action ready
+- ✅ Extended analyzers
 
-### 2. GitHub Action (Next Week)
+### Stage 2 Options
 
-| Task | Impact | Effort |
-|------|--------|--------|
-| Create .github/workflows/action.yml | High | Low |
-| PR comment generation | High | Medium |
-| Baseline comparison in PR | Medium | Medium |
+| Option | Effort | Impact |
+|--------|--------|--------|
+| **npm publish** | Low | Medium - public visibility |
+| **Landing page** | Medium | Medium - marketing |
+| **Video demo** | Low | Medium - showcase |
+| **Cloud dashboard** | High | High - monetization |
+| **Team features** | High | High - monetization |
+| **ROI calculator** | Medium | Medium - value proposition |
 
-### 3. Polish (Post-Action)
+### Recommended Path
 
-| Task | Priority |
-|------|----------|
-| Improve error messages | Medium |
-| Add --verbose flag | Low |
-| Add --quiet flag | Low |
-| Better progress output | Medium |
-
----
-
-## References
-
-- `docs/brief.md` — What we build, what NOT to build
-- `docs/dod.md` — Definition of Done
-- `docs/finding-schema.md` — Finding model
-- `docs/mvp-scope.md` — Scope boundaries
-- `docs/demo-script.md` — Demo preparation
-- `docs/TODO.md` — Monetization roadmap
+1. **npm publish** — quick win, public visibility
+2. **Landing page** — marketing, email capture
+3. **Video demo** — showcase capabilities
+4. **Early adopters** — gather feedback
+5. **Cloud dashboard** — monetization
 
 ---
 
 ## Repository
 
-Private: `https://github.com/bigcheburashka/dev-optimizer`
-
+**GitHub:** `https://github.com/bigcheburashka/dev-optimizer` (private)
 **Branch:** main
-**Commits:** 14
+**Commits:** 22
 **Tests:** 59 passing
+**License:** MIT
