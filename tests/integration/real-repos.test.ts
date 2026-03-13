@@ -8,6 +8,10 @@ import { NpmAnalyzer } from '../../src/analyzers/NpmAnalyzer.js';
 import * as childProcess from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Test repositories with known issues
 const TEST_REPOS = [
@@ -122,7 +126,8 @@ describe('Metrics Comparison', () => {
       docker: {
         imageSize: 1200,
         buildTime: 180,
-        layerCount: 15
+        layerCount: 15,
+        contextSize: 100
       },
       npm: {
         installTimeCold: 45,
@@ -138,7 +143,8 @@ describe('Metrics Comparison', () => {
       docker: {
         imageSize: 400,
         buildTime: 60,
-        layerCount: 8
+        layerCount: 8,
+        contextSize: 50
       },
       npm: {
         installTimeCold: 15,

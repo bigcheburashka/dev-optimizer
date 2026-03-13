@@ -90,6 +90,7 @@ async function collectDockerMetrics(projectPath: string): Promise<{
   imageSize: number;
   buildTime: number;
   layerCount: number;
+  contextSize: number;
 }> {
   // Try to get actual image size if image exists
   // Otherwise estimate from Dockerfile
@@ -97,7 +98,8 @@ async function collectDockerMetrics(projectPath: string): Promise<{
   return {
     imageSize: 1200, // MB estimate
     buildTime: 180, // seconds estimate
-    layerCount: 10 // estimate
+    layerCount: 10, // estimate
+    contextSize: 100 // MB estimate
   };
 }
 

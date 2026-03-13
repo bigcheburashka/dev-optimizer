@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Analyzer, AnalysisResult, Issue, Severity, DockerMetrics, Savings } from '../types.js';
+import { Analyzer, AnalysisResult, Issue, Severity, DockerMetrics, Savings, Suggestion } from '../types.js';
 
 export class DockerAnalyzer implements Analyzer {
   name = 'docker';

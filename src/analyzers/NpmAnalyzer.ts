@@ -6,7 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as childProcess from 'child_process';
-import { Analyzer, AnalysisResult, Issue, NpmMetrics, Savings } from '../types.js';
+import { Analyzer, AnalysisResult, Issue, NpmMetrics, Savings, Suggestion } from '../types.js';
 
 export class NpmAnalyzer implements Analyzer {
   name = 'npm';

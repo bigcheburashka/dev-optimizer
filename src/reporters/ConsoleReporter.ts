@@ -97,14 +97,14 @@ export class ConsoleReporter {
     return lines.join('\n');
   }
 
-  private getScoreColor(score: number): chalk.Chalk {
+  private getScoreColor(score: number) {
     if (score >= 80) return chalk.green;
     if (score >= 60) return chalk.yellow;
     if (score >= 40) return chalk.hex('#FFA500'); // Orange
     return chalk.red;
   }
 
-  private getSeverityColor(severity: string): chalk.Chalk {
+  private getSeverityColor(severity: string) {
     switch (severity) {
       case 'critical': return chalk.red;
       case 'high': return chalk.hex('#FF6600');
