@@ -276,7 +276,7 @@ export class CiAnalyzer implements Analyzer {
     // Finding: Missing cache
     if (!this.hasGitLabCache(gitlabCi)) {
       findings.push({
-        id: 'ci-006-gitlab',
+        id: 'ci-002-gitlab',
         domain: 'ci',
         title: 'No caching configured in GitLab CI',
         description: 'GitLab CI configuration does not use caching for dependencies.',
@@ -295,6 +295,124 @@ export class CiAnalyzer implements Analyzer {
           autoFixable: true
         },
         autoFixSafe: true
+      });
+    }
+
+    // Finding: Missing stages optimization
+    const stages = gitlabCi.stages || [];
+    const jobCount = Object.keys(gitlabCi).filter(k => 
+      k !== 'stages' && k !== 'variables' && k !== 'default' && k !== 'include'
+    ).length;
+
+    if (stages.length < 2 && jobCount > 3) {
+      findings.push({
+        id: 'ci-003-gitlab',
+        domain: 'ci',
+        title: 'Jobs not optimized with stages',
+        description: 'GitLab CI has many jobs but few stages. Group jobs into stages for better parallelization.',
+        evidence: { file: '.gitlab-ci.yml', metrics: { stages: stages.length, jobs: jobCount } },
+        severity: 'medium',
+        confidence: 'high',
+        impact: {
+          type: 'time',
+          estimate: 'Save 20-30% pipeline time with proper stage ordering',
+          confidence: 'medium'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: '.gitlab-ci.yml',
+          description: 'Define stages and assign jobs to stages',
+          autoFixable: false
+        },
+        autoFixSafe: false
+      });
+    }
+
+    // Finding: Missing needs (DAG)
+    const jobsWithoutNeeds = Object.keys(gitlabCi).filter(k => 
+      k !== 'stages' && k !== 'variables' && k !== 'default' && k !== 'include' && 
+      !(gitlabCi[k] as any)?.needs
+    );
+
+    if (jobCount > 2 && jobsWithoutNeeds.length > 1) {
+      findings.push({
+        id: 'ci-004-gitlab',
+        domain: 'ci',
+        title: 'Jobs run sequentially without needs',
+        description: 'GitLab CI jobs could run in parallel using needs directive.',
+        evidence: { file: '.gitlab-ci.yml' },
+        severity: 'medium',
+        confidence: 'high',
+        impact: {
+          type: 'time',
+          estimate: 'Save 30-50% pipeline time with needs DAG',
+          confidence: 'medium'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: '.gitlab-ci.yml',
+          description: 'Add needs directive for parallel execution',
+          autoFixable: false
+        },
+        autoFixSafe: false
+      });
+    }
+
+    // Finding: Using extends (should use !reference or include)
+    const jobsWithExtends = Object.entries(gitlabCi)
+      .filter(([k, v]) => k !== 'stages' && k !== 'variables' && k !== 'default' && k !== 'include' && (v as any)?.extends)
+      .length;
+
+    if (jobsWithExtends > 0) {
+      findings.push({
+        id: 'ci-005-gitlab',
+        domain: 'ci',
+        title: 'Using deprecated extends keyword',
+        description: `Found ${jobsWithExtends} jobs using 'extends'. Consider using !reference or include:template.`,
+        evidence: { file: '.gitlab-ci.yml', metrics: { count: jobsWithExtends } },
+        severity: 'low',
+        confidence: 'medium',
+        impact: {
+          type: 'maintenance',
+          estimate: 'Modern YAML anchors are more maintainable',
+          confidence: 'medium'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: '.gitlab-ci.yml',
+          description: 'Consider using YAML anchors or include:template',
+          autoFixable: false
+        },
+        autoFixSafe: false
+      });
+    }
+
+    // Finding: Missing artifacts
+    const jobsWithArtifacts = Object.entries(gitlabCi)
+      .filter(([k, v]) => k !== 'stages' && k !== 'variables' && k !== 'default' && k !== 'include' && (v as any)?.artifacts)
+      .length;
+
+    if (jobCount > 0 && jobsWithArtifacts === 0) {
+      findings.push({
+        id: 'ci-006-gitlab',
+        domain: 'ci',
+        title: 'No artifacts defined',
+        description: 'GitLab CI has no artifact configuration. Artifacts improve pipeline efficiency.',
+        evidence: { file: '.gitlab-ci.yml' },
+        severity: 'low',
+        confidence: 'high',
+        impact: {
+          type: 'time',
+          estimate: 'Artifacts improve job dependencies',
+          confidence: 'low'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: '.gitlab-ci.yml',
+          description: 'Add artifacts for build outputs',
+          autoFixable: false
+        },
+        autoFixSafe: false
       });
     }
 
