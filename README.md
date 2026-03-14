@@ -131,12 +131,21 @@ dev-optimizer analyze --quiet
 # Preview fixes without applying
 dev-optimizer fix --dry-run
 
-# Apply safe fixes only
+# Apply safe fixes automatically
 dev-optimizer fix --safe
 
-# Apply all fixes interactively
+# Interactive mode (confirm each fix)
 dev-optimizer fix --interactive
+
+# Apply all fixes (use with caution)
+dev-optimizer fix --no-safe
 ```
+
+**Interactive mode options:**
+- `y` = Apply this fix
+- `n` = Skip this fix
+- `a` = Apply all remaining fixes
+- `q` = Quit without applying
 
 ### Baseline & CI Integration
 
