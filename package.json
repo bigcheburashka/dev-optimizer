@@ -28,9 +28,7 @@
     "dev-optimizer": "dist/cli.js"
   },
   "files": [
-    "dist",
-    "!dist/**/*.map",
-    "!dist/**/*.d.ts.map"
+    "dist"
   ],
   "scripts": {
     "build": "tsc",
