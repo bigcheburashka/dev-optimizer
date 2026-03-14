@@ -11,6 +11,7 @@ import { CiAnalyzer } from '../analyzers/CiAnalyzer.js';
 import { ConsoleReporter } from '../reporters/ConsoleReporter.js';
 import { MarkdownReporter } from '../reporters/MarkdownReporter.js';
 import { RepoScanner } from '../discovery/RepoInventory.js';
+import { DeepAnalyzer } from '../deep-analyzer.js';
 import { FullReport, Finding, Domain } from '../types.js';
 import ora from 'ora';
 
@@ -137,6 +138,36 @@ export async function analyzeCommand(options: AnalyzeOptions): Promise<void> {
       if (!options.quiet) {
         spinner.info('🔄 CI config not applicable');
       }
+    }
+  }
+
+  // Deep analysis (optional)
+  if (options.deep) {
+    if (!options.quiet) {
+      spinner.start('🔬 Running deep analysis...');
+    }
+    const deepAnalyzer = new DeepAnalyzer();
+    
+    // Size estimates
+    const sizeRecommendations = await deepAnalyzer.getSizeRecommendations(projectPath);
+    if (!options.quiet) {
+      spinner.succeed(`Deep analysis: ${sizeRecommendations.length} recommendations`);
+      if (sizeRecommendations.length > 0) {
+        console.log('\n📊 Size Estimates:');
+        for (const rec of sizeRecommendations) {
+          console.log(`   ${rec.category}: ${rec.current} → ${rec.potential} (${rec.savings})`);
+        }
+      }
+    }
+    
+    // Docker layers (if Dockerfile exists)
+    const dockerFindings = await deepAnalyzer.analyzeDockerLayers(projectPath);
+    allFindings.push(...dockerFindings);
+    
+    // CI speedup estimate
+    const ciEstimate = await deepAnalyzer.estimateCiSpeedup(projectPath, allFindings);
+    if (!options.quiet && ciEstimate.savings.includes('minutes')) {
+      console.log(`\n⏱️  CI Optimization: ${ciEstimate.current}min → ${ciEstimate.potential}min (${ciEstimate.savings})`);
     }
   }
 
