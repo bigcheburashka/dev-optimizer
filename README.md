@@ -12,9 +12,12 @@
 |------|------|--------------|
 | `--quick` | **0.2 sec** | Static analysis only (Dockerfile, CI, package.json) |
 | Default | **30 sec** | + npm outdated + npm audit + knip (parallel) |
-| `--deep` | **45 sec** | + size estimates + deep dependency analysis |
+| `--deep` | **31 sec** | + size estimates + Docker layers + CI optimization |
 
-**7.5x faster** than alternatives in quick mode.
+**All modes run in parallel where possible:**
+- npm outdated + npm audit run concurrently
+- Deep analysis methods run concurrently
+- Quick mode skips all external tools
 
 | Tool | Time | Coverage |
 |------|------|----------|
