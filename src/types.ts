@@ -104,31 +104,7 @@ export interface Analyzer {
 }
 
 // =============================================================================
-// Legacy Types (for backward compatibility during migration)
-// =============================================================================
-
-// These will be removed after full migration to Finding schema
-
-export interface Issue {
-  type: string;
-  severity: Severity;
-  message: string;
-  file?: string;
-  line?: number;
-  suggestion?: string;
-  documentation?: string;
-}
-
-export interface Suggestion {
-  type: string;
-  description: string;
-  impact: string;
-  autoFix: boolean;
-  safe: boolean;
-}
-
-// =============================================================================
-// Analyzer Results (Legacy - will be replaced)
+// Metrics
 // =============================================================================
 
 export interface DockerMetrics {
@@ -213,13 +189,3 @@ export interface Reporter {
 }
 
 // =============================================================================
-// Config
-// =============================================================================
-
-export interface DevOptimizerConfig {
-  path: string;
-  domains: Domain[];
-  output: 'table' | 'json' | 'markdown';
-  dryRun: boolean;
-  safeOnly: boolean;
-}

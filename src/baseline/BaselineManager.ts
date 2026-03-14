@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Baseline, Savings, Finding } from '../types.js';
 
-export interface BaselineRecord {
+interface BaselineRecord {
   timestamp: string;
   baseline: Baseline;
   findings: {
@@ -19,7 +19,7 @@ export interface BaselineRecord {
   savings: Savings;
 }
 
-export interface BaselineHistory {
+interface BaselineHistory {
   projectPath: string;
   records: BaselineRecord[];
 }

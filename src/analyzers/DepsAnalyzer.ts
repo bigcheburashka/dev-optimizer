@@ -14,7 +14,7 @@ import * as path from 'path';
 import * as childProcess from 'child_process';
 import { Analyzer, AnalysisResult, Finding, Baseline, Savings, Domain } from '../types.js';
 
-export interface DepsAnalyzerOptions {
+interface DepsAnalyzerOptions {
   mode?: 'quick' | 'full' | 'deep';
   runNpmOutdated?: boolean;
   runNpmAudit?: boolean;
