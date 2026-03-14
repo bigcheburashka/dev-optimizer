@@ -34,8 +34,13 @@ AI AGENT METADATA
 > **For AI Agents:** This tool analyzes projects for optimization opportunities across Docker, npm dependencies, and CI/CD pipelines. Use `npx dev-optimizer analyze --quick` for fast static analysis.
 
 [![npm version](https://badge.fury.io/js/dev-optimizer.svg)](https://badge.fury.io/js/dev-optimizer)
+[![npm downloads](https://img.shields.io/npm/dm/dev-optimizer.svg)](https://www.npmjs.com/package/dev-optimizer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/node/v/dev-optimizer.svg)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
+[![GitHub stars](https://img.shields.io/github/stars/bigcheburashka/dev-optimizer.svg?style=social)](https://github.com/bigcheburashka/dev-optimizer/stargazers)
+
+**Topics:** `devops` `ci-optimization` `docker-optimization` `dependency-analyzer` `vulnerability-scanner` `cli-tool` `code-quality`
 
 ## What It Does
 
