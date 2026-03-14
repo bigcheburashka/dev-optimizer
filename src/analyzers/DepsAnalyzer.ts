@@ -62,13 +62,13 @@ export class DepsAnalyzer implements Analyzer {
       // Process unused dependencies
       for (const dep of knipResult.dependencies || []) {
         const depName = typeof dep === 'string' ? dep : (dep as any).name || String(dep);
-        findings.push(this.createUnusedDepFinding(depName, packageJson));
+        findings.push(this.createUnusedDepFinding(depName, packageJson, false, projectPath));
       }
 
       // Process unused dev dependencies
       for (const dep of knipResult.devDependencies || []) {
         const depName = typeof dep === 'string' ? dep : (dep as any).name || String(dep);
-        findings.push(this.createUnusedDepFinding(depName, packageJson, true));
+        findings.push(this.createUnusedDepFinding(depName, packageJson, true, projectPath));
       }
 
       // Process unused exports
@@ -410,40 +410,162 @@ export class DepsAnalyzer implements Analyzer {
   private createUnusedDepFinding(
     depName: string, 
     packageJson: any, 
-    isDev: boolean = false
+    isDev: boolean = false,
+    projectPath: string = process.cwd()
   ): Finding {
     const version = (packageJson.dependencies || {})[depName] || 
                     (packageJson.devDependencies || {})[depName] ||
                     'unknown';
 
+    // Verify dependency usage in code
+    const usageResult = this.verifyDependencyUsage(depName, projectPath);
+    
+    const severity = usageResult.used ? 'low' : 'medium';
+    const confidence = usageResult.used ? 'low' : 'high';
+    const autoFixable = !usageResult.used;
+    
+    const description = usageResult.used
+      ? `Package '${depName}' is marked as unused by knip but found ${usageResult.locations.length} usage(s) in code. May be false positive - verify manually.`
+      : `Package '${depName}' is in ${isDev ? 'devDependencies' : 'dependencies'} but never imported.`;
+
     return {
       id: `deps-001-${depName}`,
       domain: 'deps',
-      title: `Unused ${isDev ? 'dev ' : ''}dependency: ${depName}`,
-      description: `Package '${depName}' is in ${isDev ? 'devDependencies' : 'dependencies'} but never imported.`,
+      title: usageResult.used 
+        ? `Potentially unused ${isDev ? 'dev ' : ''}dependency: ${depName} (verify)`
+        : `Unused ${isDev ? 'dev ' : ''}dependency: ${depName}`,
+      description,
       evidence: {
         file: 'package.json',
         snippet: `"${depName}": "${version}"`,
-        metrics: {
+        metrics: usageResult.used ? {
+          usageCount: usageResult.locations.length,
+          firstLocation: usageResult.locations[0] || '',
+          usageVerified: true
+        } : {
           unusedCount: 1
         }
       },
-      severity: 'medium',
-      confidence: 'high',
+      severity: severity as 'low' | 'medium' | 'high' | 'critical',
+      confidence: confidence as 'low' | 'medium' | 'high',
       impact: {
         type: 'size',
-        estimate: `Remove to reduce node_modules size`,
-        confidence: 'high'
+        estimate: usageResult.used 
+          ? 'Verify usage before removing - may be required'
+          : 'Remove to reduce node_modules size',
+        confidence: confidence
       },
       suggestedFix: {
         type: 'modify',
         file: 'package.json',
-        description: `Remove ${depName} from ${isDev ? 'devDependencies' : 'dependencies'}`,
-        diff: `-    "${depName}": "${version}",`,
-        autoFixable: true
+        description: usageResult.used
+          ? `VERIFY FIRST: ${depName} appears to be used in ${usageResult.locations.length} file(s)`
+          : `Remove ${depName} from ${isDev ? 'devDependencies' : 'dependencies'}`,
+        diff: usageResult.used ? undefined : `-    "${depName}": "${version}",`,
+        autoFixable: autoFixable
       },
-      autoFixSafe: true
+      autoFixSafe: !usageResult.used
     };
+  }
+
+  /**
+   * Verify if dependency is actually used in code
+   * Returns usage locations if found
+   */
+  private verifyDependencyUsage(depName: string, projectPath: string): { used: boolean; locations: string[] } {
+    const locations: string[] = [];
+    const srcPath = path.join(projectPath, 'src');
+    
+    // Directories to search
+    const searchDirs = [
+      srcPath,
+      path.join(projectPath, 'lib'),
+      path.join(projectPath, 'app'),
+      projectPath // Root as fallback
+    ].filter(fs.existsSync);
+    
+    // Common import patterns
+    const patterns = [
+      `require\\(['"]${depName}['"]\\)`,
+      `require\\(['"]${depName}/`,
+      `from ['"]${depName}['"]`,
+      `from ['"]${depName}/`,
+      `import\\(['"]${depName}['"]\\)`,
+      `import\\(['"]${depName}/`
+    ];
+    
+    // Also check for common variations (scoped packages)
+    const baseName = depName.replace(/^@[^/]+\//, '');
+    if (baseName !== depName) {
+      patterns.push(`require\\(['"][^'"]*${baseName}['"]\\)`);
+      patterns.push(`from ['"][^'"]*${baseName}['"]`);
+    }
+    
+    try {
+      for (const searchDir of searchDirs) {
+        const files = this.findFilesRecursively(searchDir, '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs');
+        
+        for (const file of files) {
+          const content = fs.readFileSync(file, 'utf-8');
+          
+          for (const pattern of patterns) {
+            const regex = new RegExp(pattern, 'g');
+            if (regex.test(content)) {
+              const relativePath = path.relative(projectPath, file);
+              locations.push(relativePath);
+              break; // Found in this file, no need to check more patterns
+            }
+          }
+          
+          if (locations.length >= 10) break; // Enough evidence
+        }
+        
+        if (locations.length >= 10) break;
+      }
+    } catch (error) {
+      // Ignore errors during verification
+    }
+    
+    return {
+      used: locations.length > 0,
+      locations
+    };
+  }
+
+  /**
+   * Find files recursively with given extensions
+   */
+  private findFilesRecursively(dir: string, ...extensions: string[]): string[] {
+    const files: string[] = [];
+    
+    const traverse = (currentDir: string) => {
+      const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+      
+      for (const entry of entries) {
+        const fullPath = path.join(currentDir, entry.name);
+        
+        // Skip node_modules, dist, build, .git
+        if (entry.isDirectory()) {
+          if (['node_modules', 'dist', 'build', '.git', 'coverage', '.next', '.nuxt'].includes(entry.name)) {
+            continue;
+          }
+          traverse(fullPath);
+        } else if (entry.isFile()) {
+          const ext = path.extname(entry.name);
+          if (extensions.some(e => ext === e || ext === `.${e}`)) {
+            files.push(fullPath);
+          }
+        }
+      }
+    };
+    
+    try {
+      traverse(dir);
+    } catch (error) {
+      // Ignore errors
+    }
+    
+    return files;
   }
 
   private async collectBaseline(projectPath: string): Promise<Baseline> {

@@ -4,6 +4,7 @@
 
 import { DepsAnalyzer } from '../../src/analyzers/DepsAnalyzer.js';
 import * as path from 'path';
+import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -170,6 +171,93 @@ describe('DepsAnalyzer', () => {
       const result = await analyzer.analyze(projectPath);
       
       expect(result.baseline.hasCi).toBe(true);
+    });
+  });
+
+  describe('dependency usage verification', () => {
+    it('should detect import statements', async () => {
+      // Test that verifyDependencyUsage correctly finds import usage
+      const projectPath = path.join(__dirname, '../fixtures/good-deps');
+      const result = await analyzer.analyze(projectPath);
+      
+      // If chalk is used in the project, it should not be flagged as unused
+      const chalkFinding = result.findings.find(f => 
+        f.id.includes('chalk') && f.title.includes('Unused')
+      );
+      
+      // chalk should either not be flagged, or flagged with low confidence
+      if (chalkFinding) {
+        expect(chalkFinding.confidence).toBe('low');
+        expect(chalkFinding.title).toContain('verify');
+      }
+    });
+
+    it('should mark dependency as used when found in code', () => {
+      // Test the verifyDependencyUsage method directly
+      const analyzerWithMethod = analyzer as any;
+      
+      // Create a temp test directory with a file that imports a package
+      const testDir = '/tmp/test-verify-' + Date.now();
+      fs.mkdirSync(testDir + '/src', { recursive: true });
+      fs.writeFileSync(testDir + '/src/index.js', 
+        "const express = require('express');\nmodule.exports = express;");
+      
+      const result = analyzerWithMethod.verifyDependencyUsage('express', testDir);
+      
+      expect(result.used).toBe(true);
+      expect(result.locations.length).toBeGreaterThan(0);
+      
+      // Cleanup
+      fs.rmSync(testDir, { recursive: true });
+    });
+
+    it('should mark dependency as unused when NOT found in code', () => {
+      const analyzerWithMethod = analyzer as any;
+      
+      const testDir = '/tmp/test-verify-unused-' + Date.now();
+      fs.mkdirSync(testDir + '/src', { recursive: true });
+      fs.writeFileSync(testDir + '/src/index.js', 
+        "const fs = require('fs');\nmodule.exports = {};");
+      
+      const result = analyzerWithMethod.verifyDependencyUsage('nonexistent-package', testDir);
+      
+      expect(result.used).toBe(false);
+      expect(result.locations.length).toBe(0);
+      
+      // Cleanup
+      fs.rmSync(testDir, { recursive: true });
+    });
+
+    it('should handle ESM imports', () => {
+      const analyzerWithMethod = analyzer as any;
+      
+      const testDir = '/tmp/test-verify-esm-' + Date.now();
+      fs.mkdirSync(testDir + '/src', { recursive: true });
+      fs.writeFileSync(testDir + '/src/index.js', 
+        "import express from 'express';\nexport default express;");
+      
+      const result = analyzerWithMethod.verifyDependencyUsage('express', testDir);
+      
+      expect(result.used).toBe(true);
+      
+      // Cleanup
+      fs.rmSync(testDir, { recursive: true });
+    });
+
+    it('should handle dynamic imports', () => {
+      const analyzerWithMethod = analyzer as any;
+      
+      const testDir = '/tmp/test-verify-dynamic-' + Date.now();
+      fs.mkdirSync(testDir + '/src', { recursive: true });
+      fs.writeFileSync(testDir + '/src/index.js', 
+        "const lodash = import('lodash');\nexport default lodash;");
+      
+      const result = analyzerWithMethod.verifyDependencyUsage('lodash', testDir);
+      
+      expect(result.used).toBe(true);
+      
+      // Cleanup
+      fs.rmSync(testDir, { recursive: true });
     });
   });
 });
