@@ -73,6 +73,40 @@ export class DockerAnalyzer implements Analyzer {
         },
         autoFixSafe: true
       });
+    } else {
+      // Check for essential patterns in existing .dockerignore
+      const dockerignoreQuality = await this.checkDockerignoreQuality(projectPath);
+      if (dockerignoreQuality.missing.length > 0) {
+        findings.push({
+          id: 'docker-022',
+          domain: 'docker',
+          title: 'Incomplete .dockerignore',
+          description: `.dockerignore is missing essential patterns: ${dockerignoreQuality.missing.join(', ')}`,
+          evidence: {
+            file: '.dockerignore',
+            snippet: dockerignoreQuality.content?.split('\n').slice(0, 5).join('\n'),
+            metrics: {
+              missingPatterns: dockerignoreQuality.missing.length,
+              missingList: dockerignoreQuality.missing.slice(0, 5).join(', ')
+            }
+          },
+          severity: 'medium',
+          confidence: 'high',
+          impact: {
+            type: 'size',
+            estimate: `Reduce build context by ${dockerignoreQuality.missing.length * 20} MB`,
+            confidence: 'medium'
+          },
+          suggestedFix: {
+            type: 'modify',
+            file: '.dockerignore',
+            description: 'Add missing patterns to .dockerignore',
+            diff: dockerignoreQuality.missing.map(p => `+ ${p}`).join('\n'),
+            autoFixable: true
+          },
+          autoFixSafe: true
+        });
+      }
     }
 
     // Finding: No multistage build
@@ -355,6 +389,57 @@ export class DockerAnalyzer implements Analyzer {
 
   private async checkDockerignore(projectPath: string): Promise<boolean> {
     return fs.existsSync(path.join(projectPath, '.dockerignore'));
+  }
+
+  /**
+   * Check quality of existing .dockerignore
+   */
+  private async checkDockerignoreQuality(projectPath: string): Promise<{ 
+    missing: string[]; 
+    content?: string; 
+  }> {
+    const essentialPatterns = [
+      'node_modules',
+      '.git',
+      '*.log',
+      'coverage',
+      '.env',
+      '.DS_Store',
+      'dist',
+      'build',
+      '*.md',
+      'tests',
+      '.github'
+    ];
+
+    const dockerignorePath = path.join(projectPath, '.dockerignore');
+    let content: string;
+    
+    try {
+      content = await fs.promises.readFile(dockerignorePath, 'utf-8');
+    } catch {
+      return { missing: essentialPatterns };
+    }
+
+    const lines = content.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+    const missing: string[] = [];
+
+    for (const pattern of essentialPatterns) {
+      const hasPattern = lines.some(line => {
+        // Check for exact match or wildcard match
+        if (line === pattern) return true;
+        if (pattern.startsWith('*') && line.includes(pattern.slice(1))) return true;
+        if (pattern.endsWith('*') && line.includes(pattern.slice(0, -1))) return true;
+        // Check if line matches the pattern
+        return line.includes(pattern);
+      });
+      
+      if (!hasPattern) {
+        missing.push(pattern);
+      }
+    }
+
+    return { missing, content };
   }
 
   private hasMultistage(dockerfile: string): boolean {
