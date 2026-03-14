@@ -31,6 +31,7 @@ tests/fixtures/integration/
 
 # Cache
 .dev-optimizer-cache/
+.dev-optimizer/
 .npm/
 .cache/
 
