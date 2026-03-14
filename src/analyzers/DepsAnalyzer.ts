@@ -268,6 +268,12 @@ export class DepsAnalyzer implements Analyzer {
     const deprecated = await this.checkDeprecated(packageJson);
     findings.push(...deprecated);
 
+    // Finding: Duplicate versions in dependency tree (full mode)
+    if (this.options.mode !== 'quick') {
+      const duplicates = await this.findDuplicateVersions(projectPath);
+      findings.push(...duplicates);
+    }
+
     // Finding: Outdated packages (full mode)
     const outdated = await this.runNpmOutdated(projectPath);
     findings.push(...outdated);
@@ -809,5 +815,95 @@ export class DepsAnalyzer implements Analyzer {
     const description = viaArray.join('. ') || null;
     
     return { cve, title, description };
+  }
+
+  /**
+   * Find duplicate versions in dependency tree
+   */
+  private async findDuplicateVersions(projectPath: string): Promise<Finding[]> {
+    const findings: Finding[] = [];
+    
+    try {
+      // Run npm ls --json --depth=Infinity to get full dependency tree
+      const result = childProcess.execSync(
+        'npm ls --json --depth=Infinity --silent 2>/dev/null || npm ls --json --depth=Infinity 2>/dev/null',
+        {
+          cwd: projectPath,
+          encoding: 'utf-8',
+          maxBuffer: 50 * 1024 * 1024 // 50MB buffer for large trees
+        }
+      );
+
+      const tree = JSON.parse(result);
+      const deps: Record<string, string[]> = {};
+
+      // Traverse dependency tree
+      const traverse = (obj: any, path = '') => {
+        if (!obj || typeof obj !== 'object') return;
+        
+        if (obj.dependencies) {
+          for (const [name, info] of Object.entries(obj.dependencies)) {
+            const version = (info as any)?.version;
+            if (version) {
+              if (!deps[name]) deps[name] = [];
+              if (!deps[name].includes(version)) {
+                deps[name].push(version);
+              }
+            }
+            traverse(info, path + '/' + name);
+          }
+        }
+      };
+
+      traverse(tree);
+
+      // Find duplicates
+      const duplicates = Object.entries(deps)
+        .filter(([name, versions]) => versions.length > 1)
+        .sort((a, b) => b[1].length - a[1].length);
+
+      for (const [name, versions] of duplicates) {
+        // Only report if versions are significantly different (not just patch)
+        const hasMultipleMajor = versions.some(v => {
+          const major = parseInt(v.split('.')[0], 10);
+          const others = versions.filter(v2 => parseInt(v2.split('.')[0], 10) !== major);
+          return others.length > 0;
+        });
+
+        if (hasMultipleMajor) {
+          findings.push({
+            id: `deps-duplicate-${name}`,
+            domain: 'deps',
+            title: `Duplicate versions of ${name}`,
+            description: `Package ${name} has ${versions.length} different versions: ${versions.join(', ')}. This increases bundle size.`,
+            evidence: {
+              file: 'package.json',
+              metrics: {
+                versions: versions.length,
+                package: name
+              }
+            },
+            severity: 'medium',
+            confidence: 'high',
+            impact: {
+              type: 'size',
+              estimate: `Reduce bundle size by deduplicating ${name}`,
+              confidence: 'medium'
+            },
+            suggestedFix: {
+              type: 'modify',
+              file: 'package.json',
+              description: 'Run npm dedupe or update dependencies to use same version',
+              autoFixable: false
+            },
+            autoFixSafe: false
+          });
+        }
+      }
+    } catch (error) {
+      // npm ls failed - skip this check
+    }
+
+    return findings;
   }
 }
