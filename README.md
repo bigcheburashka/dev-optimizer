@@ -93,19 +93,6 @@ AI AGENT METADATA
 | knip | 28 sec | Unused exports |
 | npm outdated | 10 sec | Outdated packages |
 
-## Status
-
-| Feature | Status |
-|---------|--------|
-| Docker analysis | ✅ Ready |
-| Dependency analysis | ✅ Ready |
-| CI/CD analysis | ✅ Ready |
-| Safe auto-fixes | ✅ Ready |
-| GitHub Action | ✅ Ready |
-| Deep analysis (--deep) | ✅ Ready |
-| Quick mode (--quick) | ✅ Ready |
-| npm publish | ⏳ Pending |
-
 ## Installation
 
 ```bash
