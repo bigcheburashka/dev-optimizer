@@ -10,6 +10,8 @@ import { DepsAnalyzer } from '../analyzers/DepsAnalyzer.js';
 import { CiAnalyzer } from '../analyzers/CiAnalyzer.js';
 import { ConsoleReporter } from '../reporters/ConsoleReporter.js';
 import { MarkdownReporter } from '../reporters/MarkdownReporter.js';
+import { JsonReporter } from '../reporters/JsonReporter.js';
+import { SarifReporter } from '../reporters/SarifReporter.js';
 import { RepoScanner } from '../discovery/RepoInventory.js';
 import { DeepAnalyzer } from '../deep-analyzer.js';
 import { FullReport, Finding, Domain } from '../types.js';
@@ -17,7 +19,7 @@ import ora from 'ora';
 
 interface AnalyzeOptions {
   path: string;
-  output: 'table' | 'json' | 'markdown';
+  output: 'table' | 'json' | 'markdown' | 'sarif';
   type: 'docker' | 'deps' | 'ci' | 'all';
   top: number;
   quick?: boolean;
@@ -235,15 +237,20 @@ export async function analyzeCommand(options: AnalyzeOptions): Promise<void> {
 
   switch (options.output) {
     case 'json':
-      console.log(JSON.stringify(report, null, 2));
+      const jsonReporter = new JsonReporter();
+      console.log(jsonReporter.format(report));
       break;
     case 'markdown':
       const mdReporter = new MarkdownReporter();
       console.log(mdReporter.format(report));
       break;
+    case 'sarif':
+      const sarifReporter = new SarifReporter();
+      console.log(sarifReporter.format(report));
+      break;
     default:
-      const reporter = new ConsoleReporter();
-      console.log(reporter.format(report));
+      const consoleReporter = new ConsoleReporter();
+      console.log(consoleReporter.format(report));
   }
 }
 

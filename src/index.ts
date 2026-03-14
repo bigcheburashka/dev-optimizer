@@ -19,7 +19,7 @@ program
   .command('analyze')
   .description('Analyze project for optimization opportunities')
   .option('-p, --path <path>', 'Path to project', '.')
-  .option('-o, --output <format>', 'Output format: console, json, markdown', 'console')
+  .option('-o, --output <format>', 'Output format: console, json, markdown, sarif', 'console')
   .option('-t, --type <type>', 'Analysis type: docker, deps, ci, all', 'all')
   .option('--top <n>', 'Show top N findings', '5')
   .option('--quick', 'Quick mode - fast analysis without npm commands', false)
