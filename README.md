@@ -344,21 +344,25 @@ These fixes are safe to apply automatically:
 ```
 src/
 ├── analyzers/
-│   ├── DockerAnalyzer.ts    # Dockerfile + .dockerignore
-│   ├── DepsAnalyzer.ts      # package.json + knip
+│   ├── DockerAnalyzer.ts    # Dockerfile + .dockerignore analysis
+│   ├── DepsAnalyzer.ts      # package.json + knip + npm audit
 │   └── CiAnalyzer.ts        # GitHub Actions + GitLab CI
 ├── commands/
 │   ├── analyze.ts           # Main analysis command
-│   ├── fix.ts               # Auto-fix command
+│   ├── fix.ts               # Auto-fix command (--interactive)
 │   ├── baseline.ts          # Baseline management
 │   └── metrics.ts           # Metrics command
 ├── reporters/
-│   ├── ConsoleReporter.ts   # Table output
-│   └── MarkdownReporter.ts   # PR comments
+│   ├── ConsoleReporter.ts   # Table output (default)
+│   ├── MarkdownReporter.ts  # PR comments
+│   ├── JsonReporter.ts      # CI integration
+│   └── SarifReporter.ts     # GitHub Code Scanning
+├── baseline/
+│   └── BaselineManager.ts  # Baseline persistence
 ├── discovery/
-│   └── RepoInventory.ts     # Project detection
-├── deep-analyzer.ts         # Size estimates
-├── self-analysis.ts         # Self-check
+│   └── RepoInventory.ts     # Project type detection
+├── deep-analyzer.ts         # Size estimates + Docker layers
+├── self-analysis.ts         # Self-check module
 └── types.ts                 # Finding schema
 ```
 
