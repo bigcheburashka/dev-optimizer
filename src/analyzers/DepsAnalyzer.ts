@@ -13,6 +13,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as childProcess from 'child_process';
 import { Analyzer, AnalysisResult, Finding, Baseline, Savings, Domain, Severity, Confidence } from '../types.js';
+import { getCachedOutdated, setCachedOutdated, getCachedAudit, setCachedAudit } from '../utils/npm-cache.js';
 
 interface DepsAnalyzerOptions {
   mode?: 'quick' | 'full' | 'deep';
@@ -825,21 +826,30 @@ export class DepsAnalyzer implements Analyzer {
       // Ignore errors
     }
 
-    try {
-      const result = childProcess.execSync(
-        'npm outdated --json',
-        {
-          cwd: projectPath,
-          encoding: 'utf-8',
-          timeout: 30000,
-          stdio: ['pipe', 'pipe', 'pipe']
-        }
-      );
+    // Check cache first (24h TTL)
+    let outdated: Record<string, any> | null = getCachedOutdated(projectPath);
 
-      const outdated = JSON.parse(result);
+    // Run npm outdated if no cache
+    if (!outdated) {
+      try {
+        const result = childProcess.execSync(
+          'npm outdated --json',
+          { cwd: projectPath, encoding: 'utf-8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'] }
+        );
+        try { outdated = JSON.parse(result); setCachedOutdated(projectPath, outdated!); } catch {}
+      } catch (error: any) {
+        const output = error.stdout || '';
+        if (output) {
+          try { outdated = JSON.parse(output); setCachedOutdated(projectPath, outdated!); } catch {}
+        }
+      }
+    }
+
+    if (!outdated) return findings;
       
       for (const [name, info] of Object.entries(outdated)) {
-        const pkgInfo = info as { current: string; wanted: string; latest: string };
+        const pkgInfo = info as { current?: string; wanted?: string; latest?: string };
+        if (!pkgInfo.current || !pkgInfo.latest) continue;
         
         // Check if version is pinned (intentional)
         const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
@@ -897,32 +907,6 @@ export class DepsAnalyzer implements Analyzer {
           },
           autoFixSafe: !isPinned && majorDiff === 0
         });
-      }
-    } catch (error: any) {
-      // npm outdated returns exit code 1 when packages are outdated
-      try {
-        const output = error.stdout || '';
-        if (output) {
-          const outdated = JSON.parse(output);
-          for (const [name, info] of Object.entries(outdated)) {
-            const pkgInfo = info as { current: string; wanted: string; latest: string };
-            findings.push({
-              id: `deps-010-outdated-${name}`,
-              domain: 'deps',
-              title: `Outdated package: ${name}`,
-              description: `Package '${name}' has newer version available.`,
-                evidence: { file: 'package.json', snippet: `"${name}": "${pkgInfo.current}" → "${pkgInfo.latest}"` },
-              severity: 'low',
-              confidence: 'high',
-              impact: { type: 'security', estimate: 'Update for latest features', confidence: 'low' },
-              suggestedFix: { type: 'modify', file: 'package.json', description: `npm install ${name}@latest`, autoFixable: false },
-              autoFixSafe: false
-            });
-          }
-        }
-      } catch {
-        // No outdated packages or npm not available
-      }
     }
 
     return findings;
@@ -938,80 +922,44 @@ export class DepsAnalyzer implements Analyzer {
     }
 
     const findings: Finding[] = [];
+    
+    // Check cache first (6h TTL)
+    let audit: any = getCachedAudit(projectPath);
 
-    try {
-      const result = childProcess.execSync(
-        'npm audit --json',
-        {
-          cwd: projectPath,
-          encoding: 'utf-8',
-          timeout: 30000,
-          stdio: ['pipe', 'pipe', 'pipe']
-        }
-      );
-
-      // No vulnerabilities
-      return findings;
-    } catch (error: any) {
-      // npm audit returns exit code 1 when vulnerabilities found
+    // Run npm audit if no cache
+    if (!audit) {
       try {
+        childProcess.execSync('npm audit --json', { cwd: projectPath, encoding: 'utf-8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'] });
+        audit = { vulnerabilities: {} };
+        setCachedAudit(projectPath, audit);
+      } catch (error: any) {
         const output = error.stdout || '';
         if (output) {
-          const audit = JSON.parse(output);
-          if (audit.vulnerabilities) {
-            for (const [name, info] of Object.entries(audit.vulnerabilities)) {
-              const vuln = info as { 
-                name: string; 
-                severity: string; 
-                via: string[] | string; 
-                fixAvailable?: boolean;
-              };
-              const severity = vuln.severity === 'critical' || vuln.severity === 'high' ? 'critical' : 
-                               vuln.severity === 'moderate' ? 'high' : 'medium';
-              
-              // Extract CVE info
-              const cveInfo = this.extractCVEInfo(vuln.via);
-              const nvdLink = cveInfo.cve 
-                ? `https://nvd.nist.gov/vuln/detail/${cveInfo.cve}`
-                : `https://www.npmjs.com/advisories`;
-              
-              findings.push({
-                id: `deps-security-${name}`,
-                domain: 'deps',
-                title: `[${vuln.severity.toUpperCase()}] ${name}${cveInfo.cve ? ` (${cveInfo.cve})` : ''}`,
-                description: cveInfo.description || `Package '${name}' has ${vuln.severity} security vulnerability.`,
-                evidence: { 
-                  file: 'package.json', 
-                  snippet: `"${name}"`,
-                  metrics: { 
-                    cve: cveInfo.cve || '',
-                    severity: vuln.severity,
-                    fixable: vuln.fixAvailable ? 1 : 0
-                  }
-                },
-                severity: severity as 'critical' | 'high' | 'medium' | 'low',
-                confidence: 'high',
-                impact: { 
-                  type: 'security', 
-                  estimate: cveInfo.cve ? `CVE: ${cveInfo.cve}` : 'Security vulnerability',
-                  confidence: 'high' 
-                },
-                suggestedFix: { 
-                  type: 'modify', 
-                  file: 'package.json', 
-                  description: vuln.fixAvailable 
-                    ? `npm audit fix${vuln.fixAvailable === true ? '' : ' --force'}` 
-                    : `Update manually. See: ${nvdLink}`,
-                  autoFixable: vuln.fixAvailable ? true : false
-                },
-                autoFixSafe: false
-              });
-            }
-          }
+          try { audit = JSON.parse(output); setCachedAudit(projectPath, audit); } catch {}
         }
-      } catch {
-        // npm not available or parse error
       }
+    }
+
+    if (!audit || !audit.vulnerabilities) return findings;
+
+    for (const [name, info] of Object.entries(audit.vulnerabilities)) {
+      const vuln = info as { name: string; severity: string; via: string[] | string; fixAvailable?: boolean };
+      const severity = vuln.severity === 'critical' || vuln.severity === 'high' ? 'critical' : vuln.severity === 'moderate' ? 'high' : 'medium';
+      const cveInfo = this.extractCVEInfo(vuln.via);
+      const nvdLink = cveInfo.cve ? `https://nvd.nist.gov/vuln/detail/${cveInfo.cve}` : `https://www.npmjs.com/advisories`;
+      
+      findings.push({
+        id: `deps-security-${name}`,
+        domain: 'deps',
+        title: `[${vuln.severity.toUpperCase()}] ${name}${cveInfo.cve ? ` (${cveInfo.cve})` : ''}`,
+        description: cveInfo.description || `Package '${name}' has ${vuln.severity} security vulnerability.`,
+        evidence: { file: 'package.json', snippet: `"${name}"`, metrics: { cve: cveInfo.cve || '', severity: vuln.severity, fixable: vuln.fixAvailable ? 1 : 0 } },
+        severity: severity as 'critical' | 'high' | 'medium' | 'low',
+        confidence: 'high',
+        impact: { type: 'security', estimate: cveInfo.cve ? `CVE: ${cveInfo.cve}` : 'Security vulnerability', confidence: 'high' },
+        suggestedFix: { type: 'modify', file: 'package.json', description: vuln.fixAvailable ? `npm audit fix${vuln.fixAvailable === true ? '' : ' --force'}` : `Update manually. See: ${nvdLink}`, autoFixable: vuln.fixAvailable ? true : false },
+        autoFixSafe: false
+      });
     }
 
     return findings;
