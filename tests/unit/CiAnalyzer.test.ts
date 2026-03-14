@@ -4,6 +4,7 @@
 
 import { CiAnalyzer } from '../../src/analyzers/CiAnalyzer.js';
 import * as path from 'path';
+import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -90,6 +91,48 @@ describe('CiAnalyzer', () => {
       for (const finding of result.findings) {
         expect(finding.domain).toBe('ci');
       }
+    });
+  });
+
+  describe('false positive handling', () => {
+    it('should NOT report missing cache for workflow without npm install', async () => {
+      // Create a test fixture for workflow without npm
+      const projectPath = path.join(__dirname, '../fixtures/no-npm-ci');
+      if (fs.existsSync(projectPath)) {
+        const result = await analyzer.analyze(projectPath);
+        
+        // Should NOT report "No caching configured" for workflow without npm
+        const cacheFinding = result.findings.find(f => 
+          f.id.includes('ci-002') && f.title.includes('No caching')
+        );
+        expect(cacheFinding).toBeUndefined();
+      }
+    });
+
+    it('should NOT report duplicate npm install for isolated jobs', async () => {
+      // In GitHub Actions, each job runs in its own runner
+      // npm install in different jobs is NOT a duplicate
+      const projectPath = path.join(__dirname, '../fixtures/good-ci');
+      const result = await analyzer.analyze(projectPath);
+      
+      // Should NOT report duplicate npm install
+      const duplicateFinding = result.findings.find(f => 
+        f.id.includes('ci-007') && f.title.includes('Duplicate npm')
+      );
+      expect(duplicateFinding).toBeUndefined();
+    });
+
+    it('should NOT report sequential jobs when jobs run without needs (parallel)', async () => {
+      // Jobs WITHOUT 'needs' run IN PARALLEL in GitHub Actions
+      // This is the optimal case, not a problem
+      const projectPath = path.join(__dirname, '../fixtures/good-ci');
+      const result = await analyzer.analyze(projectPath);
+      
+      // Should NOT report jobs run sequentially for parallel jobs
+      const sequentialFinding = result.findings.find(f => 
+        f.id.includes('ci-005') && f.title.includes('Jobs run sequentially')
+      );
+      expect(sequentialFinding).toBeUndefined();
     });
   });
 });

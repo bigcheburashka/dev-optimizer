@@ -1,0 +1,28 @@
+name: Security Check
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Run security script
+        run: |
+          chmod +x scripts/security-check.sh
+          ./scripts/security-check.sh
+
+      - name: Validate config
+        run: |
+          echo "Validating configuration..."
+          test -f .env.example
