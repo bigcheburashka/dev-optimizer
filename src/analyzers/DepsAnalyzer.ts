@@ -308,12 +308,20 @@ export class DepsAnalyzer implements Analyzer {
       findings.push(...duplicates);
     }
 
-    // Finding: Outdated packages (full mode)
-    const outdated = await this.runNpmOutdated(projectPath);
+    // Parallel npm analysis (full mode) - run npm outdated and npm audit simultaneously
+    let outdated: Finding[] = [];
+    let vulnerabilities: Finding[] = [];
+    
+    if (this.options.mode !== 'quick') {
+      const [outdatedResult, vulnerabilitiesResult] = await Promise.all([
+        this.runNpmOutdated(projectPath),
+        this.runNpmAudit(projectPath)
+      ]);
+      outdated = outdatedResult;
+      vulnerabilities = vulnerabilitiesResult;
+    }
+    
     findings.push(...outdated);
-
-    // Finding: Security vulnerabilities (full mode)
-    const vulnerabilities = await this.runNpmAudit(projectPath);
     findings.push(...vulnerabilities);
 
     // Finding: Missing package-lock.json
