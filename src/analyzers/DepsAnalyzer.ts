@@ -20,6 +20,15 @@ export interface DepsAnalyzerOptions {
   runNpmAudit?: boolean;
 }
 
+interface KnipResult {
+  dependencies: string[];
+  devDependencies: string[];
+  exports: Array<{ name: string; file: string; line?: number; type: string }>;
+  files: Array<{ file: string; description?: string }>;
+  types: Array<{ name: string; file: string; line?: number; type: string }>;
+  classMembers: Array<{ name: string; file: string; line?: number; className: string }>;
+}
+
 export class DepsAnalyzer implements Analyzer {
   name: Domain = 'deps';
   private options: DepsAnalyzerOptions;
@@ -46,7 +55,7 @@ export class DepsAnalyzer implements Analyzer {
     const pnpmLockExists = fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'));
 
     // Run knip for unused dependencies
-    const knipResult = await this.runKnip(projectPath);
+    const knipResult: KnipResult | null = await this.runKnip(projectPath);
     
     if (knipResult) {
       // Process unused dependencies
@@ -87,6 +96,81 @@ export class DepsAnalyzer implements Analyzer {
             autoFixSafe: false
           });
         }
+      }
+      
+      // NEW: Process unused files
+      for (const file of knipResult.files || []) {
+        findings.push({
+          id: `deps-unused-file-${file.file.replace(/[^a-zA-Z0-9]/g, '-')}`,
+          domain: 'deps',
+          title: `Unused file: ${file.file}`,
+          description: file.description || `File '${file.file}' is not imported anywhere.`,
+          evidence: { file: file.file },
+          severity: 'medium',
+          confidence: 'high',
+          impact: {
+            type: 'maintenance',
+            estimate: 'Dead code increases repository size',
+            confidence: 'medium'
+          },
+          suggestedFix: {
+            type: 'delete',
+            file: file.file,
+            description: 'Delete unused file',
+            autoFixable: false
+          },
+          autoFixSafe: false
+        });
+      }
+      
+      // NEW: Process unused types
+      for (const type of knipResult.types || []) {
+        findings.push({
+          id: `deps-unused-type-${type.name}`,
+          domain: 'deps',
+          title: `Unused type: ${type.name}`,
+          description: `Type '${type.name}' in ${type.file} is never used.`,
+          evidence: { file: type.file, line: type.line },
+          severity: 'low',
+          confidence: 'high',
+          impact: {
+            type: 'maintenance',
+            estimate: 'Dead types clutter codebase',
+            confidence: 'medium'
+          },
+          suggestedFix: {
+            type: 'delete',
+            file: type.file,
+            description: `Remove unused type '${type.name}'`,
+            autoFixable: false
+          },
+          autoFixSafe: false
+        });
+      }
+      
+      // NEW: Process unused class members
+      for (const member of knipResult.classMembers || []) {
+        findings.push({
+          id: `deps-unused-member-${member.name}`,
+          domain: 'deps',
+          title: `Unused class member: ${member.className}.${member.name}`,
+          description: `Method '${member.name}' in class ${member.className} is never called.`,
+          evidence: { file: member.file, line: member.line },
+          severity: 'low',
+          confidence: 'medium',
+          impact: {
+            type: 'size',
+            estimate: 'Dead methods increase bundle size',
+            confidence: 'medium'
+          },
+          suggestedFix: {
+            type: 'delete',
+            file: member.file,
+            description: `Remove unused method '${member.name}'`,
+            autoFixable: false
+          },
+          autoFixSafe: false
+        });
       }
     }
 
@@ -230,11 +314,7 @@ export class DepsAnalyzer implements Analyzer {
   /**
    * Run knip and parse results
    */
-  private async runKnip(projectPath: string): Promise<{
-    dependencies?: string[];
-    devDependencies?: string[];
-    exports?: Array<{ name: string; file?: string; line?: number; type?: string }>;
-  } | null> {
+  private async runKnip(projectPath: string): Promise<KnipResult | null> {
     try {
       // Run knip with JSON output
       const result = childProcess.execSync(
@@ -250,16 +330,46 @@ export class DepsAnalyzer implements Analyzer {
       // Parse knip output
       const knipData = JSON.parse(result);
       
+      const issues = knipData.issues || {};
+      
+      // Map knip severity to our severity
+      const mapSeverity = (severity?: string): 'critical' | 'high' | 'medium' | 'low' => {
+        if (severity === 'error') return 'high';
+        if (severity === 'warning') return 'medium';
+        return 'low';
+      };
+      
       return {
-        dependencies: knipData.issues?.dependencies || [],
-        devDependencies: knipData.issues?.devDependencies || [],
-        exports: (knipData.issues?.exports || []).map((e: any) => ({
+        dependencies: issues.dependencies || [],
+        devDependencies: issues.devDependencies || [],
+        exports: (issues.exports || []).map((e: any) => ({
           name: e.name || e.identifier,
           file: e.file,
           line: e.line,
           type: 'unused'
+        })),
+        // NEW: Unused files
+        files: (issues.files || []).map((f: any) => {
+          if (typeof f === 'string') {
+            return { file: f, description: 'Unused file not imported anywhere' };
+          }
+          return { file: f.file, description: f.message || 'Unused file' };
+        }),
+        // NEW: Unused types
+        types: (issues.types || []).map((t: any) => ({
+          name: t.name || t.identifier,
+          file: t.file,
+          line: t.line,
+          type: 'unused-type'
+        })),
+        // NEW: Unused class members
+        classMembers: (issues.classMembers || []).map((m: any) => ({
+          name: m.name || m.identifier,
+          file: m.file,
+          line: m.line,
+          className: m.className
         }))
-      };
+      } as KnipResult;
     } catch (error: any) {
       // knip returns non-zero exit code when issues are found
       // Try to parse stderr for JSON
@@ -272,8 +382,11 @@ export class DepsAnalyzer implements Analyzer {
           return {
             dependencies: knipData.issues?.dependencies || knipData.dependencies || [],
             devDependencies: knipData.issues?.devDependencies || knipData.devDependencies || [],
-            exports: []
-          };
+            exports: [],
+            files: [],
+            types: [],
+            classMembers: []
+          } as KnipResult;
         }
       } catch {
         // knip not available or parse error
