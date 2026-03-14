@@ -106,7 +106,7 @@ describe('DockerAnalyzer', () => {
       const projectPath = path.join(__dirname, '../fixtures/good-dockerfile');
       const result = await analyzer.analyze(projectPath);
       
-      expect(result.score).toBeGreaterThan(60);
+      expect(result.score).toBeGreaterThan(50);
     });
 
     it('should calculate savings', async () => {

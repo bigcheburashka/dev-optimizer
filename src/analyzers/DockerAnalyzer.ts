@@ -244,6 +244,12 @@ export class DockerAnalyzer implements Analyzer {
       findings.push(copyAllFinding);
     }
 
+    // Finding: Layer order for caching
+    const layerOrderFinding = this.checkLayerOrder(dockerfile);
+    if (layerOrderFinding) {
+      findings.push(layerOrderFinding);
+    }
+
     // Finding: pip install without --no-cache-dir
     const pipCacheFinding = this.checkPipCache(dockerfile);
     if (pipCacheFinding) {
@@ -1220,6 +1226,108 @@ export class DockerAnalyzer implements Analyzer {
       }
     }
 
+    return null;
+  }
+
+  /**
+   * Check for optimal layer order for Docker caching
+   * Best practice: package.json → npm install → COPY source
+   */
+  private checkLayerOrder(dockerfile: string): Finding | null {
+    const lines = dockerfile.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+    
+    // Find positions of key instructions
+    let packageJsonPos = -1;
+    let npmInstallPos = -1;
+    let copySourcePos = -1;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].toUpperCase();
+      
+      // COPY package*.json
+      if (line.includes('COPY') && (line.includes('PACKAGE') || line.includes('PACKAGE.JSON'))) {
+        packageJsonPos = i;
+      }
+      
+      // npm install / npm ci
+      if (line.includes('RUN') && (line.includes('NPM INSTALL') || line.includes('NPM CI') || line.includes('YARN'))) {
+        npmInstallPos = i;
+      }
+      
+      // COPY . . (source code)
+      if (line.match(/COPY\s+\.\s+\./) || (line.includes('COPY') && line.includes('.') && !line.includes('PACKAGE'))) {
+        copySourcePos = i;
+      }
+    }
+    
+    // Check if source is copied before npm install (bad for caching)
+    if (copySourcePos !== -1 && npmInstallPos !== -1 && copySourcePos < npmInstallPos) {
+      return {
+        id: 'docker-006',
+        domain: 'docker',
+        title: 'Inefficient layer order',
+        description: 'Source code is copied before package installation. This breaks Docker layer caching - any source change invalidates the npm install layer.',
+        evidence: {
+          file: 'Dockerfile',
+          snippet: `COPY . . (line ${copySourcePos + 1}) → npm install (line ${npmInstallPos + 1})`,
+          metrics: {
+            copyLine: copySourcePos + 1,
+            installLine: npmInstallPos + 1
+          }
+        },
+        severity: 'high',
+        confidence: 'high',
+        impact: {
+          type: 'time',
+          estimate: '30-60s slower builds on source changes',
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: 'Dockerfile',
+          description: 'Copy package.json first, then npm install, then source code',
+          diff: `# Before (bad caching):
+COPY . .
+RUN npm install
+
+# After (better caching):
+COPY package*.json ./
+RUN npm ci
+COPY . .`,
+          autoFixable: false
+        },
+        autoFixSafe: false
+      };
+    }
+    
+    // Check if package.json is copied before npm install (good)
+    if (packageJsonPos !== -1 && npmInstallPos !== -1 && packageJsonPos > npmInstallPos) {
+      return {
+        id: 'docker-006',
+        domain: 'docker',
+        title: 'Inefficient layer order',
+        description: 'npm install runs before package.json is copied. This will fail or use wrong dependencies.',
+        evidence: {
+          file: 'Dockerfile',
+          snippet: `npm install (line ${npmInstallPos + 1}) before COPY package.json (line ${packageJsonPos + 1})`
+        },
+        severity: 'critical',
+        confidence: 'high',
+        impact: {
+          type: 'stability',
+          estimate: 'Build will fail or use outdated dependencies',
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: 'Dockerfile',
+          description: 'Copy package.json before running npm install',
+          autoFixable: false
+        },
+        autoFixSafe: false
+      };
+    }
+    
     return null;
   }
 }
