@@ -15,8 +15,8 @@ interface BaselineOptions {
   save: boolean;
   compare: boolean;
   history: boolean;
-  'fail-on-regression': boolean;
-  'min-score': number;
+  failOnRegression: boolean;
+  minScore: number | undefined;
 }
 
 export async function baselineCommand(options: BaselineOptions): Promise<void> {
@@ -67,9 +67,10 @@ export async function baselineCommand(options: BaselineOptions): Promise<void> {
     console.log(`   Savings: ${totalSavings.sizeMB} MB, ${Math.round(totalSavings.timeSeconds / 60)} min`);
     
     // Threshold alerts
-    if (options['min-score'] && totalScore < options['min-score']) {
-      console.log(`\n⚠️  Score ${totalScore} is below threshold ${options['min-score']}.`);
-      if (options['fail-on-regression']) {
+    const minScore = options.minScore;
+    if (minScore !== undefined && totalScore < minScore) {
+      console.log(`\n⚠️  Score ${totalScore} is below threshold ${minScore}.`);
+      if (options.failOnRegression) {
         console.log('Exiting with code 1.');
         process.exit(1);
       }
@@ -114,14 +115,15 @@ export async function baselineCommand(options: BaselineOptions): Promise<void> {
     console.log(manager.formatComparison(comparison));
     
     // CI integration: fail on regression
-    if (options['fail-on-regression'] && comparison.changes.scoreDelta < 0) {
-      console.log('\n❌ Regression detected! Exiting with code 1.');
+    if (options.failOnRegression && comparison.changes.scoreDelta < 0) {
+      console.log('\n❌ Regression detected! Score decreased.');
       process.exit(1);
     }
     
     // Threshold alerts
-    if (options['min-score'] && comparison.current.score < options['min-score']) {
-      console.log(`\n⚠️  Score ${comparison.current.score} is below threshold ${options['min-score']}. Exiting with code 1.`);
+    const minScore = options.minScore;
+    if (minScore !== undefined && comparison.current.score < minScore) {
+      console.log(`\n⚠️  Score ${comparison.current.score} is below threshold ${minScore}.`);
       process.exit(1);
     }
     
