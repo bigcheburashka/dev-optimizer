@@ -12,7 +12,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as childProcess from 'child_process';
-import { Analyzer, AnalysisResult, Finding, Baseline, Savings, Domain } from '../types.js';
+import { Analyzer, AnalysisResult, Finding, Baseline, Savings, Domain, Severity, Confidence } from '../types.js';
 
 interface DepsAnalyzerOptions {
   mode?: 'quick' | 'full' | 'deep';
@@ -756,6 +756,16 @@ export class DepsAnalyzer implements Analyzer {
   }
 
   /**
+   * Check if version is pinned (exact version without ^ or ~)
+   */
+  private isPinnedVersion(version: string): boolean {
+    // Pinned versions: 1.2.3 (no ^ or ~)
+    // Not pinned: ^1.2.3, ~1.2.3, >=1.2.3, 1.x, *
+    const pinnedPattern = /^\d+\.\d+\.\d+$/;
+    return pinnedPattern.test(version);
+  }
+
+  /**
    * Run npm outdated for version analysis
    * Full mode - requires npm
    */
@@ -765,6 +775,15 @@ export class DepsAnalyzer implements Analyzer {
     }
 
     const findings: Finding[] = [];
+
+    // Read package.json to check for pinned versions
+    let packageJson: any = {};
+    try {
+      const packageJsonPath = path.join(projectPath, 'package.json');
+      packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+    } catch {
+      // Ignore errors
+    }
 
     try {
       const result = childProcess.execSync(
@@ -782,34 +801,61 @@ export class DepsAnalyzer implements Analyzer {
       for (const [name, info] of Object.entries(outdated)) {
         const pkgInfo = info as { current: string; wanted: string; latest: string };
         
+        // Check if version is pinned (intentional)
+        const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
+        const declaredVersion = deps[name] || '';
+        const isPinned = this.isPinnedVersion(declaredVersion.replace(/^[@a-zA-Z]+\//, ''));
+        
+        // Reduce severity for pinned versions (may be intentional)
         const currentMajor = parseInt(pkgInfo.current.split('.')[0]);
         const latestMajor = parseInt(pkgInfo.latest.split('.')[0]);
         const majorDiff = latestMajor - currentMajor;
+
+        // Adjust severity based on pinned status
+        let severity: Severity = majorDiff >= 2 ? 'high' : majorDiff === 1 ? 'medium' : 'low';
+        let confidence: Confidence = 'high';
+        
+        if (isPinned) {
+          // Pinned version - may be intentional, reduce severity
+          severity = majorDiff >= 2 ? 'medium' : 'low';
+          confidence = 'medium'; // Less confident because could be intentional
+        }
 
         findings.push({
           id: `deps-010-outdated-${name}`,
           domain: 'deps',
           title: `Outdated package: ${name}`,
-          description: `Package '${name}' is ${majorDiff > 0 ? `${majorDiff} major versions` : 'versions'} behind.`,
+          description: isPinned 
+            ? `Package '${name}' is pinned to ${pkgInfo.current} but ${pkgInfo.latest} is available. May be intentional.`
+            : `Package '${name}' is ${majorDiff > 0 ? `${majorDiff} major versions` : 'versions'} behind.`,
           evidence: {
             file: 'package.json',
             snippet: `"${name}": "${pkgInfo.current}" → "${pkgInfo.latest}"`,
-            metrics: { majorDiff }
+            metrics: { 
+              majorDiff,
+              current: pkgInfo.current,
+              latest: pkgInfo.latest,
+              pinned: isPinned
+            }
           },
-          severity: majorDiff >= 2 ? 'high' : majorDiff === 1 ? 'medium' : 'low',
-          confidence: 'high',
+          severity: severity,
+          confidence: confidence,
           impact: {
             type: 'security',
-            estimate: 'Potential security vulnerabilities in outdated version',
-            confidence: 'medium'
+            estimate: isPinned 
+              ? 'Review if pinned version needs update'
+              : 'Potential security vulnerabilities in outdated version',
+            confidence: confidence
           },
           suggestedFix: {
             type: 'modify',
             file: 'package.json',
-            description: `Update: npm install ${name}@latest`,
-            autoFixable: majorDiff === 0
+            description: isPinned
+              ? `Verify pinned version is still needed: npm install ${name}@${pkgInfo.latest}`
+              : `Update: npm install ${name}@latest`,
+            autoFixable: !isPinned && majorDiff === 0
           },
-          autoFixSafe: majorDiff === 0
+          autoFixSafe: !isPinned && majorDiff === 0
         });
       }
     } catch (error: any) {
