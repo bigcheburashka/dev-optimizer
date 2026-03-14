@@ -53,8 +53,10 @@ export class DepsAnalyzer implements Analyzer {
     const yarnLockExists = fs.existsSync(path.join(projectPath, 'yarn.lock'));
     const pnpmLockExists = fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'));
 
-    // Run knip for unused dependencies
-    const knipResult: KnipResult | null = await this.runKnip(projectPath);
+    // Run knip for unused dependencies (skip in quick mode for speed)
+    const knipResult: KnipResult | null = this.options.mode === 'quick'
+      ? null
+      : await this.runKnip(projectPath);
     
     if (knipResult) {
       // Process unused dependencies

@@ -55,9 +55,10 @@ export async function analyzeCommand(options: AnalyzeOptions): Promise<void> {
     console.log('');
   }
 
-  // Initialize analyzers
-  const dockerAnalyzer = new DockerAnalyzer();
-  const depsAnalyzer = new DepsAnalyzer();
+  // Initialize analyzers - pass mode based on quick option
+  const analyzerMode = options.quick ? 'quick' : 'full';
+  const dockerAnalyzer = new DockerAnalyzer({ mode: analyzerMode });
+  const depsAnalyzer = new DepsAnalyzer({ mode: analyzerMode });
   const ciAnalyzer = new CiAnalyzer();
   
   const allFindings: Finding[] = [];
@@ -78,67 +79,73 @@ export async function analyzeCommand(options: AnalyzeOptions): Promise<void> {
     }
   }
 
-  // Run applicable analyzers
-  // Docker analysis
-  if (domains.includes('docker')) {
-    if (await dockerAnalyzer.isApplicable(projectPath)) {
-      if (!options.quiet) {
-        spinner.start('🐳 Running Docker analysis...');
-      }
-      const result = await dockerAnalyzer.analyze(projectPath);
-      allFindings.push(...result.findings);
-      baseline = { ...baseline, ...result.baseline };
-      totalSavings.timeSeconds += result.savings.timeSeconds;
-      totalSavings.sizeMB += result.savings.sizeMB;
-      if (!options.quiet) {
-        spinner.succeed(`Docker analysis: ${result.findings.length} findings`);
-      }
-    } else {
-      if (!options.quiet) {
-        spinner.info('🐳 Docker not applicable');
-      }
-    }
+  // PARALLEL EXECUTION: Run all analyzers concurrently for maximum speed
+  if (!options.quiet) {
+    spinner.start('⚡ Running analyzers in parallel...');
   }
 
-  // Dependencies analysis
-  if (domains.includes('deps')) {
-    if (await depsAnalyzer.isApplicable(projectPath)) {
-      if (!options.quiet) {
-        spinner.start('📦 Running Dependencies analysis...');
-      }
-      const result = await depsAnalyzer.analyze(projectPath);
-      allFindings.push(...result.findings);
-      baseline = { ...baseline, ...result.baseline };
-      totalSavings.timeSeconds += result.savings.timeSeconds;
-      totalSavings.sizeMB += result.savings.sizeMB;
-      if (!options.quiet) {
-        spinner.succeed(`Dependencies analysis: ${result.findings.length} findings`);
-      }
-    } else {
-      if (!options.quiet) {
-        spinner.info('📦 package.json not applicable');
-      }
-    }
+  // Check applicability in parallel
+  const [dockerApply, depsApply, ciApply] = await Promise.all([
+    domains.includes('docker') ? dockerAnalyzer.isApplicable(projectPath) : Promise.resolve(false),
+    domains.includes('deps') ? depsAnalyzer.isApplicable(projectPath) : Promise.resolve(false),
+    domains.includes('ci') ? ciAnalyzer.isApplicable(projectPath) : Promise.resolve(false)
+  ]);
+
+  // Run applicable analyzers in parallel
+  const analysisPromises: Promise<any>[] = [];
+  const applicabilityResults: boolean[] = [];
+
+  if (dockerApply) {
+    analysisPromises.push(dockerAnalyzer.analyze(projectPath));
+    applicabilityResults.push(true);
+  } else {
+    analysisPromises.push(Promise.resolve(null));
+    applicabilityResults.push(false);
   }
 
-  // CI/CD analysis
-  if (domains.includes('ci')) {
-    if (await ciAnalyzer.isApplicable(projectPath)) {
-      if (!options.quiet) {
-        spinner.start('🔄 Running CI/CD analysis...');
-      }
-      const result = await ciAnalyzer.analyze(projectPath);
-      allFindings.push(...result.findings);
-      baseline = { ...baseline, ...result.baseline };
-      totalSavings.timeSeconds += result.savings.timeSeconds;
-      if (!options.quiet) {
-        spinner.succeed(`CI/CD analysis: ${result.findings.length} findings`);
-      }
-    } else {
-      if (!options.quiet) {
-        spinner.info('🔄 CI config not applicable');
-      }
-    }
+  if (depsApply) {
+    analysisPromises.push(depsAnalyzer.analyze(projectPath));
+    applicabilityResults.push(true);
+  } else {
+    analysisPromises.push(Promise.resolve(null));
+    applicabilityResults.push(false);
+  }
+
+  if (ciApply) {
+    analysisPromises.push(ciAnalyzer.analyze(projectPath));
+    applicabilityResults.push(true);
+  } else {
+    analysisPromises.push(Promise.resolve(null));
+    applicabilityResults.push(false);
+  }
+
+  const [dockerResult, depsResult, ciResult] = await Promise.all(analysisPromises);
+
+  // Collect results
+  if (dockerResult) {
+    allFindings.push(...dockerResult.findings);
+    baseline = { ...baseline, ...dockerResult.baseline };
+    totalSavings.timeSeconds += dockerResult.savings.timeSeconds;
+    totalSavings.sizeMB += dockerResult.savings.sizeMB;
+  }
+  if (depsResult) {
+    allFindings.push(...depsResult.findings);
+    baseline = { ...baseline, ...depsResult.baseline };
+    totalSavings.timeSeconds += depsResult.savings.timeSeconds;
+    totalSavings.sizeMB += depsResult.savings.sizeMB;
+  }
+  if (ciResult) {
+    allFindings.push(...ciResult.findings);
+    baseline = { ...baseline, ...ciResult.baseline };
+    totalSavings.timeSeconds += ciResult.savings.timeSeconds;
+  }
+
+  // Show results
+  if (!options.quiet) {
+    spinner.succeed(`Analyzed ${allFindings.length} findings`);
+    if (!dockerApply) spinner.info('🐳 Docker not applicable');
+    if (!depsApply) spinner.info('📦 Dependencies not applicable');
+    if (!ciApply) spinner.info('🔄 CI config not applicable');
   }
 
   // Deep analysis (optional)
