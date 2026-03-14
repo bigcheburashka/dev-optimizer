@@ -487,10 +487,10 @@ export class DepsAnalyzer implements Analyzer {
 
     for (const finding of findings) {
       switch (finding.severity) {
-        case 'critical': score -= 30; break;
-        case 'high': score -= 20; break;
-        case 'medium': score -= 10; break;
-        case 'low': score -= 5; break;
+        case 'critical': score -= 20; break;
+        case 'high': score -= 10; break;
+        case 'medium': score -= 2; break;
+        case 'low': score -= 1; break;
       }
     }
 

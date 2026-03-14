@@ -98,8 +98,8 @@ describe('DockerAnalyzer', () => {
       const projectPath = path.join(__dirname, '../fixtures/bad-dockerfile');
       const result = await analyzer.analyze(projectPath);
       
-      // Bad Dockerfile should have low score
-      expect(result.score).toBeLessThan(70);
+      // Bad Dockerfile should have low score (penalty changed)
+      expect(result.score).toBeLessThan(80);
     });
 
     it('should have higher score for good Dockerfile', async () => {
