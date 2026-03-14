@@ -19,6 +19,7 @@ interface DepsAnalyzerOptions {
   mode?: 'quick' | 'full' | 'deep';
   runNpmOutdated?: boolean;
   runNpmAudit?: boolean;
+  forceRefresh?: boolean;
 }
 
 interface KnipResult {
@@ -826,8 +827,8 @@ export class DepsAnalyzer implements Analyzer {
       // Ignore errors
     }
 
-    // Check cache first (24h TTL)
-    let outdated: Record<string, any> | null = getCachedOutdated(projectPath);
+    // Check cache first (24h TTL), skip if forceRefresh
+    let outdated: Record<string, any> | null = this.options.forceRefresh ? null : getCachedOutdated(projectPath);
 
     // Run npm outdated if no cache
     if (!outdated) {
@@ -923,8 +924,8 @@ export class DepsAnalyzer implements Analyzer {
 
     const findings: Finding[] = [];
     
-    // Check cache first (6h TTL)
-    let audit: any = getCachedAudit(projectPath);
+    // Check cache first (6h TTL), skip if forceRefresh
+    let audit: any = this.options.forceRefresh ? null : getCachedAudit(projectPath);
 
     // Run npm audit if no cache
     if (!audit) {

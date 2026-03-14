@@ -24,6 +24,7 @@ interface AnalyzeOptions {
   top: number;
   quick?: boolean;
   deep?: boolean;
+  forceRefresh?: boolean;
   verbose?: boolean;
   quiet?: boolean;
 }
@@ -60,7 +61,7 @@ export async function analyzeCommand(options: AnalyzeOptions): Promise<void> {
   // Initialize analyzers - pass mode based on quick option
   const analyzerMode = options.quick ? 'quick' : 'full';
   const dockerAnalyzer = new DockerAnalyzer({ mode: analyzerMode });
-  const depsAnalyzer = new DepsAnalyzer({ mode: analyzerMode });
+  const depsAnalyzer = new DepsAnalyzer({ mode: analyzerMode, forceRefresh: options.forceRefresh });
   const ciAnalyzer = new CiAnalyzer();
   
   const allFindings: Finding[] = [];

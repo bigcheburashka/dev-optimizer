@@ -25,6 +25,7 @@ program
   .option('--top <n>', 'Show top N findings', '5')
   .option('--quick', 'Quick mode - fast analysis without npm commands', false)
   .option('--deep', 'Deep mode - thorough analysis with size estimates', false)
+  .option('--force-refresh', 'Force refresh - ignore npm cache', false)
   .option('--verbose', 'Verbose output - show more details', false)
   .option('--quiet', 'Quiet mode - minimal output', false)
   .action(analyzeCommand);
