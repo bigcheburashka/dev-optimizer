@@ -204,6 +204,48 @@ export class DockerAnalyzer implements Analyzer {
       findings.push(workdirFinding);
     }
 
+    // Finding: COPY . . copies everything
+    const copyAllFinding = this.checkCopyAll(dockerfile, hasDockerignore);
+    if (copyAllFinding) {
+      findings.push(copyAllFinding);
+    }
+
+    // Finding: pip install without --no-cache-dir
+    const pipCacheFinding = this.checkPipCache(dockerfile);
+    if (pipCacheFinding) {
+      findings.push(pipCacheFinding);
+    }
+
+    // Finding: apt-get without --no-install-recommends
+    const aptRecommendsFinding = this.checkAptRecommends(dockerfile);
+    if (aptRecommendsFinding) {
+      findings.push(aptRecommendsFinding);
+    }
+
+    // Finding: Using RUN chown instead of COPY --chown
+    const chownFinding = this.checkChownUsage(dockerfile);
+    if (chownFinding) {
+      findings.push(chownFinding);
+    }
+
+    // Finding: Dev dependencies in production
+    const devDepsFinding = this.checkDevDependencies(dockerfile);
+    if (devDepsFinding) {
+      findings.push(devDepsFinding);
+    }
+
+    // Finding: CLI tools that should be removed
+    const cliToolsFinding = this.checkCliTools(dockerfile);
+    if (cliToolsFinding) {
+      findings.push(cliToolsFinding);
+    }
+
+    // Finding: User creation timing
+    const userTimingFinding = this.checkUserCreation(dockerfile);
+    if (userTimingFinding) {
+      findings.push(userTimingFinding);
+    }
+
     // Finding: Hadolint (full mode)
     const hadolintFindings = await this.runHadolint(projectPath);
     findings.push(...hadolintFindings);
@@ -443,6 +485,323 @@ export class DockerAnalyzer implements Analyzer {
           type: 'modify',
           file: 'Dockerfile',
           description: 'Replace cd commands with WORKDIR',
+          autoFixable: false
+        },
+        autoFixSafe: false
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Check for COPY . . (copies everything)
+   */
+  private checkCopyAll(dockerfile: string, hasDockerignore: boolean): Finding | null {
+    const copyAllMatch = dockerfile.match(/COPY\s+\.\s+\.\s*$/m);
+    
+    if (copyAllMatch) {
+      return {
+        id: 'docker-010',
+        domain: 'docker',
+        title: 'COPY . . copies unnecessary files',
+        description: 'COPY . . copies entire build context including .git, node_modules, tests, etc.',
+        evidence: {
+          file: 'Dockerfile',
+          snippet: copyAllMatch[0].trim(),
+          metrics: {
+            estimatedWasteMB: hasDockerignore ? 100 : 500
+          }
+        },
+        severity: hasDockerignore ? 'medium' : 'high',
+        confidence: 'high',
+        impact: {
+          type: 'size',
+          estimate: hasDockerignore ? 'Reduce image by 50-100 MB' : 'Reduce image by 200-500 MB',
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: 'Dockerfile',
+          description: hasDockerignore ? 
+            'Copy only needed directories: COPY src ./src' :
+            'Create .dockerignore and copy only needed files',
+          diff: hasDockerignore ? 
+            '- COPY . .\n+ COPY src ./src' :
+            '# .dockerignore:\nnode_modules/\n.git/\ntests/\ncoverage/\n\n# Dockerfile:\nCOPY src ./src',
+          autoFixable: false
+        },
+        autoFixSafe: false
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Check for pip install without --no-cache-dir
+   */
+  private checkPipCache(dockerfile: string): Finding | null {
+    const pipMatch = dockerfile.match(/pip3?\s+install\s+(?!.*--no-cache)[^\n]*/gi);
+    
+    if (pipMatch) {
+      return {
+        id: 'docker-011',
+        domain: 'docker',
+        title: 'pip install without --no-cache-dir',
+        description: 'pip stores cache in image, increasing size by 30-50 MB.',
+        evidence: {
+          file: 'Dockerfile',
+          snippet: pipMatch[0],
+          metrics: {
+            estimatedWasteMB: 40
+          }
+        },
+        severity: 'medium',
+        confidence: 'high',
+        impact: {
+          type: 'size',
+          estimate: 'Reduce image size by 30-50 MB',
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: 'Dockerfile',
+          description: 'Add --no-cache-dir to pip install',
+          diff: `- ${pipMatch[0]}\n+ ${pipMatch[0]} --no-cache-dir`,
+          autoFixable: false
+        },
+        autoFixSafe: true
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Check for apt-get without --no-install-recommends
+   */
+  private checkAptRecommends(dockerfile: string): Finding | null {
+    const aptMatch = dockerfile.match(/apt-get\s+install\s+-y\s+(?!.*--no-install-recommends)[^\n]*/gi);
+    
+    if (aptMatch) {
+      return {
+        id: 'docker-012',
+        domain: 'docker',
+        title: 'apt-get without --no-install-recommends',
+        description: 'apt-get installs recommended packages by default, increasing size by 50-150 MB.',
+        evidence: {
+          file: 'Dockerfile',
+          snippet: aptMatch[0],
+          metrics: {
+            estimatedWasteMB: 100
+          }
+        },
+        severity: 'medium',
+        confidence: 'high',
+        impact: {
+          type: 'size',
+          estimate: 'Reduce image size by 50-150 MB',
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: 'Dockerfile',
+          description: 'Add --no-install-recommends to apt-get install',
+          diff: `- apt-get install -y ${aptMatch[0].split(' ').slice(3).join(' ')}\n+ apt-get install -y --no-install-recommends ${aptMatch[0].split(' ').slice(3).join(' ')}`,
+          autoFixable: false
+        },
+        autoFixSafe: true
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Check for RUN chown instead of COPY --chown
+   */
+  private checkChownUsage(dockerfile: string): Finding | null {
+    const chownMatch = dockerfile.match(/RUN\s+chown\s+-R\s+\S+\s+\/app/i);
+    
+    if (chownMatch) {
+      return {
+        id: 'docker-013',
+        domain: 'docker',
+        title: 'Using RUN chown instead of COPY --chown',
+        description: 'RUN chown creates an additional layer (~50 MB). Use COPY --chown instead.',
+        evidence: {
+          file: 'Dockerfile',
+          snippet: chownMatch[0],
+          metrics: {
+            estimatedWasteMB: 50
+          }
+        },
+        severity: 'medium',
+        confidence: 'high',
+        impact: {
+          type: 'size',
+          estimate: 'Reduce image size by 30-50 MB',
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: 'Dockerfile',
+          description: 'Use COPY --chown=user:group instead of RUN chown',
+          diff: `- COPY . .\n- RUN chown -R node:node /app\n+ COPY --chown=node:node . .`,
+          autoFixable: false
+        },
+        autoFixSafe: false
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Check for npm ci --omit=dev or npm prune
+   */
+  private checkDevDependencies(dockerfile: string): Finding | null {
+    const npmCiMatch = dockerfile.match(/npm\s+ci(?!\s+--omit=dev|\s+--production)/i);
+    
+    if (npmCiMatch) {
+      // Check if npm prune is used
+      const npmPruneMatch = dockerfile.match(/npm\s+prune\s+--production/i);
+      
+      if (!npmPruneMatch) {
+        return {
+          id: 'docker-014',
+          domain: 'docker',
+          title: 'npm ci installs devDependencies in production',
+          description: 'npm ci installs all dependencies including devDependencies. Use --omit=dev or npm prune.',
+          evidence: {
+            file: 'Dockerfile',
+            snippet: npmCiMatch[0],
+            metrics: {
+              estimatedWasteMB: 100
+            }
+          },
+          severity: 'medium',
+          confidence: 'medium',
+          impact: {
+            type: 'size',
+            estimate: 'Reduce image size by 50-150 MB',
+            confidence: 'medium'
+          },
+          suggestedFix: {
+            type: 'modify',
+            file: 'Dockerfile',
+            description: 'Use npm ci --omit=dev or add npm prune --production',
+            diff: `- npm ci\n+ npm ci --omit=dev`,
+            autoFixable: false
+          },
+          autoFixSafe: true
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Check for CLI tools that should be removed in production
+   */
+  private checkCliTools(dockerfile: string): Finding | null {
+    const cliPatterns = [
+      { pattern: /npx\s+prisma\s+generate/gi, tool: 'Prisma CLI', removeable: 'npx prisma generate is needed during build, but Prisma CLI can be removed after' },
+      { pattern: /npm\s+install\s+-g\s+typescript/gi, tool: 'TypeScript', removeable: 'TypeScript is dev-only tool' },
+      { pattern: /npm\s+install\s+-g\s+eslint/gi, tool: 'ESLint', removeable: 'ESLint is dev-only tool' },
+    ];
+
+    const foundTools: Array<{ tool: string; removeable: string }> = [];
+
+    for (const { pattern, tool, removeable } of cliPatterns) {
+      if (pattern.test(dockerfile)) {
+        foundTools.push({ tool, removeable });
+      }
+    }
+
+    // Check for Prisma specifically
+    const hasPrismaGenerate = /npx\s+prisma\s+generate/i.test(dockerfile);
+    const hasPrismaRemove = /rm\s+.*node_modules\/prisma/i.test(dockerfile);
+
+    if (hasPrismaGenerate && !hasPrismaRemove) {
+      return {
+        id: 'docker-015',
+        domain: 'docker',
+        title: 'Prisma CLI not removed from production image',
+        description: 'Prisma CLI (~40 MB) and .prisma cache (~30 MB) remain in production image.',
+        evidence: {
+          file: 'Dockerfile',
+          snippet: 'npx prisma generate',
+          metrics: {
+            estimatedWasteMB: 70
+          }
+        },
+        severity: 'medium',
+        confidence: 'high',
+        impact: {
+          type: 'size',
+          estimate: 'Reduce image size by 70 MB',
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: 'Dockerfile',
+          description: 'Remove Prisma CLI and cache after generating client',
+          diff: `- RUN npx prisma generate\n+ RUN npx prisma generate && rm -rf node_modules/prisma node_modules/.prisma`,
+          autoFixable: false
+        },
+        autoFixSafe: false
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Check for user creation timing (should be early for COPY --chown)
+   */
+  private checkUserCreation(dockerfile: string): Finding | null {
+    const lines = dockerfile.split('\n');
+    let copyIndex = -1;
+    let userAddIndex = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.startsWith('COPY') && copyIndex === -1) {
+        copyIndex = i;
+      }
+      if ((line.includes('useradd') || line.includes('adduser')) && userAddIndex === -1) {
+        userAddIndex = i;
+      }
+    }
+
+    // If COPY comes before user creation, can't use COPY --chown
+    if (copyIndex !== -1 && userAddIndex !== -1 && copyIndex < userAddIndex) {
+      return {
+        id: 'docker-016',
+        domain: 'docker',
+        title: 'User created after COPY (cannot use --chown)',
+        description: 'Create user before COPY to use COPY --chown and avoid chown layer.',
+        evidence: {
+          file: 'Dockerfile',
+          metrics: {
+            estimatedWasteMB: 50
+          }
+        },
+        severity: 'low',
+        confidence: 'high',
+        impact: {
+          type: 'size',
+          estimate: 'Reduce image size by 30-50 MB',
+          confidence: 'medium'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: 'Dockerfile',
+          description: 'Move user creation before COPY and use COPY --chown',
+          diff: `- COPY src ./src\n- RUN useradd appuser && chown -R appuser:appuser /app\n+ RUN useradd appuser\n+ COPY --chown=appuser:appuser src ./src`,
           autoFixable: false
         },
         autoFixSafe: false
