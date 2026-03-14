@@ -38,7 +38,8 @@ describe('fix command', () => {
       await fixCommand({
         path: tempDir,
         dryRun: false,
-        safe: true
+        safe: true,
+        interactive: false
       });
       
       const dockerignore = path.join(tempDir, '.dockerignore');
@@ -58,7 +59,8 @@ describe('fix command', () => {
       await fixCommand({
         path: tempDir,
         dryRun: true,
-        safe: true
+        safe: true,
+        interactive: false
       });
       
       const dockerignore = path.join(tempDir, '.dockerignore');
@@ -78,7 +80,8 @@ describe('fix command', () => {
       await fixCommand({
         path: tempDir,
         dryRun: false,
-        safe: true
+        safe: true,
+        interactive: false
       });
       
       const content = fs.readFileSync(dockerignore, 'utf-8');

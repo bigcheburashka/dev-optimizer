@@ -391,10 +391,10 @@ npm run test:coverage
 
 Contributions welcome! Areas needing help:
 
-1. **Tests** - Increase coverage to 100%
-2. **Reporters** - JSON reporter, SARIF format
-3. **Analyzers** - More checks per domain
-4. **CI Platforms** - CircleCI, Jenkins, Azure Pipelines
+1. **Analyzers** - Add checks: HEALTHCHECK in Docker, peer dep validation
+2. **CI Platforms** - CircleCI, Jenkins, Azure Pipelines support
+3. **Auto-fixes** - Safe automatic fixes for more issues
+4. **Performance** - Native analysis (reduce npm dependencies)
 
 ## License
 
