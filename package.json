@@ -1,6 +1,6 @@
 {
   "name": "dev-optimizer",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Analyze and optimize Docker images, npm packages, and CI/CD pipelines. Find unused dependencies, security issues, and cost savings in minutes.",
   "keywords": [
     "devops",
