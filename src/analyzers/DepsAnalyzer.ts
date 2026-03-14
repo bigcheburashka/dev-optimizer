@@ -304,6 +304,10 @@ export class DepsAnalyzer implements Analyzer {
     const deprecated = await this.checkDeprecated(packageJson);
     findings.push(...deprecated);
 
+    // Finding: Large dependencies (quick mode)
+    const largePackages = this.checkLargeDependencies(packageJson);
+    findings.push(...largePackages);
+
     // Finding: Duplicate versions in dependency tree (full mode)
     if (this.options.mode !== 'quick') {
       const duplicates = await this.findDuplicateVersions(projectPath);
@@ -1146,5 +1150,71 @@ export class DepsAnalyzer implements Analyzer {
     }
 
     return null;
+  }
+
+  /**
+   * Check for large npm packages
+   * Warn about dependencies that significantly increase install time and bundle size
+   */
+  private checkLargeDependencies(packageJson: any): Finding[] {
+    const findings: Finding[] = [];
+    const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
+
+    // Known large packages (approximate unpacked size in KB)
+    const largePackages: Record<string, { size: number; category: string; alternative?: string }> = {
+      'puppeteer': { size: 30000, category: 'browser', alternative: 'playwright-core' },
+      'electron': { size: 50000, category: 'framework' },
+      'typescript': { size: 5000, category: 'tooling' },
+      'webpack': { size: 2000, category: 'bundler', alternative: 'esbuild' },
+      'jest': { size: 5000, category: 'testing', alternative: 'vitest' },
+      '@angular/core': { size: 3000, category: 'framework' },
+      'next': { size: 5000, category: 'framework' },
+      'babel-core': { size: 3000, category: 'tooling', alternative: '@babel/core' },
+      'moment': { size: 300, category: 'utility', alternative: 'date-fns' },
+      'lodash': { size: 70, category: 'utility', alternative: 'lodash-es' },
+      'aws-sdk': { size: 5000, category: 'cloud', alternative: '@aws-sdk/client-*' },
+      'googleapis': { size: 3000, category: 'api' },
+      'rxjs': { size: 200, category: 'utility' },
+      '@vue/cli': { size: 3000, category: 'tooling' },
+      'create-react-app': { size: 2000, category: 'tooling' },
+    };
+
+    for (const [name] of Object.entries(deps)) {
+      if (largePackages[name]) {
+        const info = largePackages[name];
+        const severity = info.size > 10000 ? 'high' : info.size > 2000 ? 'medium' : 'low';
+        
+        findings.push({
+          id: `deps-012-large-${name}`,
+          domain: 'deps',
+          title: `Large dependency: ${name} (~${Math.round(info.size / 1000)}MB)`,
+          description: `Package '${name}' is a large dependency (~${Math.round(info.size / 1000)}MB unpacked). Large dependencies increase install time and may impact bundle size.`,
+          evidence: {
+            file: 'package.json',
+            snippet: `"${name}"`,
+            metrics: {
+              sizeKB: info.size,
+              category: info.category
+            }
+          },
+          severity: severity as 'high' | 'medium' | 'low',
+          confidence: 'high',
+          impact: {
+            type: 'size',
+            estimate: `~${Math.round(info.size / 1000)}MB unpacked size`,
+            confidence: 'medium'
+          },
+          suggestedFix: info.alternative ? {
+            type: 'modify' as const,
+            file: 'package.json',
+            description: `Consider lighter alternative: ${info.alternative}`,
+            autoFixable: false
+          } : undefined,
+          autoFixSafe: false
+        } as Finding);
+      }
+    }
+
+    return findings;
   }
 }
