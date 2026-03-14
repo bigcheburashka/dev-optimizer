@@ -246,6 +246,36 @@ export class DockerAnalyzer implements Analyzer {
       findings.push(userTimingFinding);
     }
 
+    // Finding: FROM with latest tag
+    const latestTagFinding = this.checkLatestTag(dockerfile);
+    if (latestTagFinding) {
+      findings.push(latestTagFinding);
+    }
+
+    // Finding: No HEALTHCHECK
+    const healthcheckFinding = this.checkHealthcheck(dockerfile);
+    if (healthcheckFinding) {
+      findings.push(healthcheckFinding);
+    }
+
+    // Finding: No USER (running as root)
+    const userFinding = this.checkUserDirective(dockerfile);
+    if (userFinding) {
+      findings.push(userFinding);
+    }
+
+    // Finding: ENV without quotes
+    const envQuotesFinding = this.checkEnvQuotes(dockerfile);
+    if (envQuotesFinding) {
+      findings.push(envQuotesFinding);
+    }
+
+    // Finding: WORKDIR not absolute
+    const workdirAbsFinding = this.checkWorkdirAbsolute(dockerfile);
+    if (workdirAbsFinding) {
+      findings.push(workdirAbsFinding);
+    }
+
     // Finding: Hadolint (full mode)
     const hadolintFindings = await this.runHadolint(projectPath);
     findings.push(...hadolintFindings);
@@ -894,5 +924,217 @@ export class DockerAnalyzer implements Analyzer {
     }
 
     return findings;
+  }
+
+  /**
+   * Check for FROM with latest tag
+   */
+  private checkLatestTag(dockerfile: string): Finding | null {
+    const latestMatch = dockerfile.match(/FROM\s+\S+:(latest|[\d]+\.[\d]+\.[\w\-]*)?\s*$/gm);
+    
+    if (latestMatch) {
+      // Check if it's actually :latest or just version tag (like node:20)
+      const hasLatest = latestMatch.some(m => m.includes(':latest'));
+      if (hasLatest) {
+        return {
+          id: 'docker-017',
+          domain: 'docker',
+          title: 'FROM with :latest tag',
+          description: 'Using :latest tag makes builds non-reproducible. Pin to specific version.',
+          evidence: {
+            file: 'Dockerfile',
+            snippet: latestMatch.find(m => m.includes(':latest'))?.trim(),
+          },
+          severity: 'high',
+          confidence: 'high',
+          impact: {
+            type: 'stability',
+            estimate: 'Unpredictable builds, security issues',
+            confidence: 'high'
+          },
+          suggestedFix: {
+            type: 'modify',
+            file: 'Dockerfile',
+            description: 'Pin to specific version instead of :latest',
+            diff: '- FROM node:latest\n+ FROM node:20.10.0',
+          autoFixable: false
+        },
+          autoFixSafe: false
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Check for missing HEALTHCHECK
+   */
+  private checkHealthcheck(dockerfile: string): Finding | null {
+    const hasHealthcheck = /^HEALTHCHECK\s/m.test(dockerfile);
+    
+    if (!hasHealthcheck) {
+      return {
+        id: 'docker-018',
+        domain: 'docker',
+        title: 'No HEALTHCHECK defined',
+        description: 'Without HEALTHCHECK, container status is unknown. Kubernetes/Docker cannot detect unhealthy state.',
+        evidence: {
+          file: 'Dockerfile',
+        },
+        severity: 'medium',
+        confidence: 'high',
+        impact: {
+          type: 'reliability',
+          estimate: 'Containers may hang without recovery',
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: 'Dockerfile',
+          description: 'Add HEALTHCHECK instruction',
+          diff: '+ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \\\n+   CMD wget --quiet --tries=1 --spider http://localhost:3000/health || exit 1',
+          autoFixable: false
+        },
+        autoFixSafe: false
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Check for USER directive (running as non-root)
+   */
+  private checkUserDirective(dockerfile: string): Finding | null {
+    const hasUser = /^USER\s+\S+/m.test(dockerfile);
+    
+    if (!hasUser) {
+      // Check if there's at least user creation
+      const hasUserCreation = /useradd|adduser|groupadd/g.test(dockerfile);
+      
+      return {
+        id: 'docker-019',
+        domain: 'docker',
+        title: 'Running as root user',
+        description: 'Container runs as root by default. Security risk in production.',
+        evidence: {
+          file: 'Dockerfile',
+        },
+        severity: 'medium',
+        confidence: 'high',
+        impact: {
+          type: 'security',
+          estimate: 'Increased attack surface',
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: 'Dockerfile',
+          description: hasUserCreation 
+            ? 'Add USER directive after user creation'
+            : 'Create non-root user and switch to it',
+          diff: hasUserCreation
+            ? '+ USER nodejs'
+            : '+ RUN groupadd --gid 1001 nodejs && useradd --uid 1001 --gid nodejs nodejs\n+ USER nodejs',
+          autoFixable: false
+        },
+        autoFixSafe: false
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Check for ENV without quotes
+   */
+  private checkEnvQuotes(dockerfile: string): Finding | null {
+    const envLines = dockerfile.split('\n').filter(l => l.trim().startsWith('ENV'));
+    const unquotedEnv: string[] = [];
+    
+    for (const line of envLines) {
+      // ENV NAME=value (without quotes around value)
+      const match = line.match(/ENV\s+\w+=(["']?)([^"'\s]+)\1/);
+      if (match && !match[1]) {
+        // Check if value contains spaces or special chars
+        if (/[\s$()`\\]/.test(match[2])) {
+          unquotedEnv.push(line.trim());
+        }
+      }
+    }
+
+    if (unquotedEnv.length > 0) {
+      return {
+        id: 'docker-020',
+        domain: 'docker',
+        title: 'ENV without quotes',
+        description: 'ENV values with special characters should be quoted.',
+        evidence: {
+          file: 'Dockerfile',
+          snippet: unquotedEnv[0],
+        },
+        severity: 'low',
+        confidence: 'high',
+        impact: {
+          type: 'stability',
+          estimate: 'May cause unexpected behavior',
+          confidence: 'medium'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: 'Dockerfile',
+          description: 'Quote ENV values',
+          diff: `- ENV PATH=/app/bin:$PATH\n+ ENV PATH="/app/bin:$PATH"`,
+          autoFixable: false
+        },
+        autoFixSafe: false
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Check for WORKDIR with relative path
+   */
+  private checkWorkdirAbsolute(dockerfile: string): Finding | null {
+    const workdirLines = dockerfile.split('\n').filter(l => l.trim().startsWith('WORKDIR'));
+    
+    for (const line of workdirLines) {
+      const match = line.match(/WORKDIR\s+(.+)/);
+      if (match) {
+        const path = match[1].trim().replace(/['"]/g, '');
+        if (!path.startsWith('/') && !path.startsWith('$')) {
+          return {
+            id: 'docker-021',
+            domain: 'docker',
+            title: 'WORKDIR with relative path',
+            description: `WORKDIR should use absolute paths for predictability.`,
+            evidence: {
+              file: 'Dockerfile',
+              snippet: line.trim(),
+            },
+            severity: 'low',
+            confidence: 'high',
+            impact: {
+              type: 'stability',
+              estimate: 'Unpredictable working directory',
+              confidence: 'high'
+            },
+            suggestedFix: {
+              type: 'modify',
+              file: 'Dockerfile',
+              description: 'Use absolute path for WORKDIR',
+              diff: `- WORKDIR app\n+ WORKDIR /app`,
+              autoFixable: false
+            },
+            autoFixSafe: false
+          };
+        }
+      }
+    }
+
+    return null;
   }
 }

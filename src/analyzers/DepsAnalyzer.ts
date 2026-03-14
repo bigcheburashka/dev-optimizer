@@ -284,6 +284,18 @@ export class DepsAnalyzer implements Analyzer {
     const vulnerabilities = await this.runNpmAudit(projectPath);
     findings.push(...vulnerabilities);
 
+    // Finding: Missing package-lock.json
+    const lockFileFinding = this.checkPackageLock(projectPath);
+    if (lockFileFinding) {
+      findings.push(lockFileFinding);
+    }
+
+    // Finding: Missing engines in package.json
+    const enginesFinding = this.checkEngines(packageJson);
+    if (enginesFinding) {
+      findings.push(enginesFinding);
+    }
+
     const savings = this.calculateSavings(findings, baseline);
 
     return {
@@ -1029,5 +1041,75 @@ export class DepsAnalyzer implements Analyzer {
     }
 
     return findings;
+  }
+
+  /**
+   * Check for missing package-lock.json
+   */
+  private checkPackageLock(projectPath: string): Finding | null {
+    const lockPath = path.join(projectPath, 'package-lock.json');
+    
+    if (!fs.existsSync(lockPath)) {
+      return {
+        id: 'deps-010',
+        domain: 'deps',
+        title: 'Missing package-lock.json',
+        description: 'package-lock.json ensures consistent dependency versions across environments.',
+        evidence: {
+          file: 'package-lock.json',
+        },
+        severity: 'high',
+        confidence: 'high',
+        impact: {
+          type: 'stability',
+          estimate: 'Non-deterministic builds, version drift',
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'create',
+          file: 'package-lock.json',
+          description: 'Run npm install to generate package-lock.json',
+          diff: 'npm install',
+          autoFixable: false
+        },
+        autoFixSafe: false
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Check for missing engines in package.json
+   */
+  private checkEngines(packageJson: any): Finding | null {
+    if (!packageJson.engines) {
+      return {
+        id: 'deps-011',
+        domain: 'deps',
+        title: 'Missing engines in package.json',
+        description: '-engines- field specifies Node.js version compatibility, preventing runtime errors.',
+        evidence: {
+          file: 'package.json',
+        },
+        severity: 'low',
+        confidence: 'high',
+        impact: {
+          type: 'stability',
+          estimate: 'Deployments may use incompatible Node.js version',
+          confidence: 'medium'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: 'package.json',
+          description: 'Add engines field with Node.js version',
+          diff: '+ "engines": { "node": ">=18.0.0" },',
+          autoFixable: false
+        },
+        autoFixSafe: false
+      };
+    }
+
+    return null;
   }
 }
