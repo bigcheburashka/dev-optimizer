@@ -1,0 +1,16 @@
+# Knip ignore configuration
+# Files that are referenced dynamically or used externally
+
+# Self-analysis module - used internally
+src/self-analysis.ts
+
+# GitHub Action - compiled separately
+action/src/index.ts
+action/src/index.test.ts
+
+# Demo repositories - used in tests
+demo-repos/**/*.js
+demo-repos/**/*.ts
+
+# Test fixtures
+tests/fixtures/**/*

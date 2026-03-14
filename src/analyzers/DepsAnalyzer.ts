@@ -332,8 +332,8 @@ export class DepsAnalyzer implements Analyzer {
       }
       
       // Get issues from knip output
-      // Knip returns array of file-specific issues or object with issues
-      const issuesArray = Array.isArray(knipData) ? knipData : (knipData.issues ? [knipData] : []);
+      // Knip returns: { files: [...], issues: [{ file, types: [...] }] }
+      const issuesArray = knipData.issues || [];
       const filesList = knipData.files || [];
       
       // Aggregate all issues from all files
