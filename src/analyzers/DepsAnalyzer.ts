@@ -26,7 +26,6 @@ interface KnipResult {
   exports: Array<{ name: string; file: string; line?: number; type: string }>;
   files: Array<{ file: string; description?: string }>;
   types: Array<{ name: string; file: string; line?: number; type: string }>;
-  classMembers: Array<{ name: string; file: string; line?: number; className: string }>;
 }
 
 export class DepsAnalyzer implements Analyzer {
@@ -142,31 +141,6 @@ export class DepsAnalyzer implements Analyzer {
             type: 'delete',
             file: type.file,
             description: `Remove unused type '${type.name}'`,
-            autoFixable: false
-          },
-          autoFixSafe: false
-        });
-      }
-      
-      // NEW: Process unused class members
-      for (const member of knipResult.classMembers || []) {
-        findings.push({
-          id: `deps-unused-member-${member.name}`,
-          domain: 'deps',
-          title: `Unused class member: ${member.className}.${member.name}`,
-          description: `Method '${member.name}' in class ${member.className} is never called.`,
-          evidence: { file: member.file, line: member.line },
-          severity: 'low',
-          confidence: 'medium',
-          impact: {
-            type: 'size',
-            estimate: 'Dead methods increase bundle size',
-            confidence: 'medium'
-          },
-          suggestedFix: {
-            type: 'delete',
-            file: member.file,
-            description: `Remove unused method '${member.name}'`,
             autoFixable: false
           },
           autoFixSafe: false
@@ -317,81 +291,104 @@ export class DepsAnalyzer implements Analyzer {
   private async runKnip(projectPath: string): Promise<KnipResult | null> {
     try {
       // Run knip with JSON output
-      const result = childProcess.execSync(
-        'npx knip --no-progress --reporter json',
-        {
-          cwd: projectPath,
-          encoding: 'utf-8',
-          timeout: 60000,
-          stdio: ['pipe', 'pipe', 'pipe']
-        }
-      );
+      // Note: knip outputs to stderr when issues found (exit code 1)
+      let stdout = '';
+      let stderr = '';
+      
+      try {
+        stdout = childProcess.execSync(
+          'npx knip --no-progress --reporter json',
+          {
+            cwd: projectPath,
+            encoding: 'utf-8',
+            timeout: 60000,
+            stdio: ['pipe', 'pipe', 'pipe']
+          }
+        );
+      } catch (error: any) {
+        // knip returns exit code 1 when issues found
+        stdout = error.stdout || '';
+        stderr = error.stderr || '';
+      }
 
-      // Parse knip output
-      const knipData = JSON.parse(result);
+      // Try to parse JSON from stdout first, then stderr
+      let knipData;
+      const jsonStr = stdout || stderr;
       
-      const issues = knipData.issues || {};
+      if (!jsonStr) {
+        return null;
+      }
       
-      // Map knip severity to our severity
-      const mapSeverity = (severity?: string): 'critical' | 'high' | 'medium' | 'low' => {
-        if (severity === 'error') return 'high';
-        if (severity === 'warning') return 'medium';
-        return 'low';
-      };
+      try {
+        knipData = JSON.parse(jsonStr);
+      } catch {
+        // Try to find JSON in output
+        const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          knipData = JSON.parse(jsonMatch[0]);
+        } else {
+          return null;
+        }
+      }
       
+      // Get issues from knip output
+      // Knip returns array of file-specific issues or object with issues
+      const issuesArray = Array.isArray(knipData) ? knipData : (knipData.issues ? [knipData] : []);
+      const filesList = knipData.files || [];
+      
+      // Aggregate all issues from all files
+      const allDependencies: string[] = [];
+      const allDevDependencies: string[] = [];
+      const allExports: Array<{ name: string; file: string; line?: number; type: string }> = [];
+      const allTypes: Array<{ name: string; file: string; line?: number; type: string }> = [];
+      
+      for (const fileIssues of issuesArray) {
+        // Dependencies
+        if (fileIssues.dependencies && fileIssues.dependencies.length > 0) {
+          allDependencies.push(...fileIssues.dependencies);
+        }
+        if (fileIssues.devDependencies && fileIssues.devDependencies.length > 0) {
+          allDevDependencies.push(...fileIssues.devDependencies.map((d: any) => d.name || d));
+        }
+        // Exports
+        if (fileIssues.exports && fileIssues.exports.length > 0) {
+          for (const e of fileIssues.exports) {
+            allExports.push({
+              name: e.name || e.identifier,
+              file: fileIssues.file,
+              line: e.line,
+              type: 'unused'
+            });
+          }
+        }
+        // Types
+        if (fileIssues.types && fileIssues.types.length > 0) {
+          for (const t of fileIssues.types) {
+            allTypes.push({
+              name: t.name || t.identifier,
+              file: fileIssues.file,
+              line: t.line,
+              type: 'unused-type'
+            });
+          }
+        }
+      }
+      
+      // Return parsed result
       return {
-        dependencies: issues.dependencies || [],
-        devDependencies: issues.devDependencies || [],
-        exports: (issues.exports || []).map((e: any) => ({
-          name: e.name || e.identifier,
-          file: e.file,
-          line: e.line,
-          type: 'unused'
-        })),
-        // NEW: Unused files
-        files: (issues.files || []).map((f: any) => {
+        dependencies: allDependencies,
+        devDependencies: allDevDependencies,
+        exports: allExports,
+        // Unused files from top-level
+        files: filesList.map((f: any) => {
           if (typeof f === 'string') {
             return { file: f, description: 'Unused file not imported anywhere' };
           }
-          return { file: f.file, description: f.message || 'Unused file' };
+          return { file: f.file || f, description: f.message || 'Unused file' };
         }),
-        // NEW: Unused types
-        types: (issues.types || []).map((t: any) => ({
-          name: t.name || t.identifier,
-          file: t.file,
-          line: t.line,
-          type: 'unused-type'
-        })),
-        // NEW: Unused class members
-        classMembers: (issues.classMembers || []).map((m: any) => ({
-          name: m.name || m.identifier,
-          file: m.file,
-          line: m.line,
-          className: m.className
-        }))
+        types: allTypes
       } as KnipResult;
     } catch (error: any) {
-      // knip returns non-zero exit code when issues are found
-      // Try to parse stderr for JSON
-      try {
-        const stderr = error.stderr || error.stdout || '';
-        // Find JSON in output
-        const jsonMatch = stderr.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const knipData = JSON.parse(jsonMatch[0]);
-          return {
-            dependencies: knipData.issues?.dependencies || knipData.dependencies || [],
-            devDependencies: knipData.issues?.devDependencies || knipData.devDependencies || [],
-            exports: [],
-            files: [],
-            types: [],
-            classMembers: []
-          } as KnipResult;
-        }
-      } catch {
-        // knip not available or parse error
-      }
-      
       // Return null if knip fails
       return null;
     }
