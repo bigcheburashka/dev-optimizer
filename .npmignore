@@ -12,5 +12,8 @@ tsconfig.json
 vitest.config.ts
 eslint.config.js
 *.log
-*.map
 .DS_Store
+
+# Source maps - not needed in production
+*.js.map
+*.d.ts.map

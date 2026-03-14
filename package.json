@@ -1,16 +1,25 @@
 {
   "name": "dev-optimizer",
   "version": "0.1.0",
-  "description": "Optimize Docker images, npm packages, and CI/CD pipelines in one CLI",
+  "description": "Analyze and optimize Docker images, npm packages, and CI/CD pipelines. Find unused dependencies, security issues, and cost savings in minutes.",
   "keywords": [
     "docker",
     "npm",
     "optimization",
     "ci-cd",
     "performance",
-    "devtools"
+    "devtools",
+    "typescript",
+    "cli",
+    "analyzer",
+    "dockerfile",
+    "github-actions",
+    "gitlab-ci",
+    "dependency",
+    "security",
+    "cost-optimization"
   ],
-  "author": "dev-optimizer",
+  "author": "bigcheburashka",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
@@ -19,7 +28,9 @@
     "dev-optimizer": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/**/*.map",
+    "!dist/**/*.d.ts.map"
   ],
   "scripts": {
     "build": "tsc",
@@ -51,10 +62,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/dev-optimizer/dev-optimizer"
+    "url": "https://github.com/bigcheburashka/dev-optimizer.git"
   },
   "bugs": {
-    "url": "https://github.com/dev-optimizer/dev-optimizer/issues"
+    "url": "https://github.com/bigcheburashka/dev-optimizer/issues"
   },
-  "homepage": "https://github.com/dev-optimizer/dev-optimizer#readme"
+  "homepage": "https://github.com/bigcheburashka/dev-optimizer#readme"
 }

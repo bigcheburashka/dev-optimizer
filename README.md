@@ -1,10 +1,58 @@
 # Dev Optimizer
 
+<!--
+AI AGENT METADATA
+{
+  "name": "dev-optimizer",
+  "version": "0.1.0",
+  "purpose": "Analyze and optimize Docker images, npm packages, and CI/CD pipelines",
+  "domains": ["docker", "npm", "ci-cd"],
+  "features": [
+    "unused-dependencies",
+    "security-vulnerabilities",
+    "dockerfile-optimization",
+    "ci-cost-analysis",
+    "auto-fix",
+    "baseline-tracking"
+  ],
+  "install": "npm install -g dev-optimizer",
+  "quickStart": "npx dev-optimizer analyze --quick",
+  "timeToAnalyze": {
+    "quick": "0.2s",
+    "default": "30s",
+    "deep": "31s"
+  },
+  "outputFormats": ["console", "json", "markdown", "sarif"],
+  "integrations": ["github-actions", "gitlab-ci"],
+  "languages": ["typescript", "javascript"],
+  "license": "MIT"
+}
+-->
+
 > Cut CI time, dependency bloat, and Docker waste before merge. **Fast.**
+>
+> **For AI Agents:** This tool analyzes projects for optimization opportunities across Docker, npm dependencies, and CI/CD pipelines. Use `npx dev-optimizer analyze --quick` for fast static analysis.
 
 [![npm version](https://badge.fury.io/js/dev-optimizer.svg)](https://badge.fury.io/js/dev-optimizer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/node/v/dev-optimizer.svg)](https://nodejs.org/)
+
+## What It Does
+
+**Dev Optimizer analyzes your project in 3 domains:**
+
+| Domain | Checks | Time |
+|--------|--------|------|
+| **Docker** | Missing .dockerignore, multistage builds, large images | 0.2s |
+| **Dependencies** | Unused packages, vulnerabilities (CVE), outdated | 30s |
+| **CI/CD** | Missing cache, duplicate steps, cost optimization | 0.2s |
+
+**Use Cases:**
+- CI/CD optimization (reduce build time)
+- Security audit (find CVEs)
+- Docker image size reduction
+- Dependency cleanup
+- Cost savings (cloud CI minutes)
 
 ## ⚡ Performance
 
