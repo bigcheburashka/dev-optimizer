@@ -10,11 +10,30 @@
 
 | Mode | Time | What it does |
 |------|------|--------------|
-| `--quick` | **0.2 sec** | Static analysis only (Dockerfile, CI, package.json) |
-| Default | **30 sec** | + npm outdated + npm audit + knip (parallel) |
-| `--deep` | **31 sec** | + size estimates + Docker layers + CI optimization |
+| `--quick` | **0.2 sec** | Static analysis only (Dockerfile, CI YAML, package.json) |
+| (default) | **30 sec** | + npm outdated + npm audit + knip (parallel execution) |
+| `--deep` | **31 sec** | + size estimates + Docker layers + CI optimization tips |
 
-**All modes run in parallel where possible:**
+### Mode Comparison
+
+| Feature | `--quick` | Default | `--deep` |
+|---------|-----------|---------|----------|
+| Docker static checks | ✅ | ✅ | ✅ |
+| CI/CD static checks | ✅ | ✅ | ✅ |
+| Package.json analysis | ✅ | ✅ | ✅ |
+| npm outdated | ❌ | ✅ | ✅ |
+| npm audit (CVE) | ❌ | ✅ | ✅ |
+| knip (unused exports) | ❌ | ✅ | ✅ |
+| Size estimates | ❌ | ❌ | ✅ |
+| Docker layer analysis | ❌ | ❌ | ✅ |
+| CI speedup prediction | ❌ | ❌ | ✅ |
+
+**Recommendations:**
+- Use `--quick` for CI pipelines (fast feedback)
+- Use default for local development
+- Use `--deep` for optimization reviews
+
+**Parallel execution:**
 - npm outdated + npm audit run concurrently
 - Deep analysis methods run concurrently
 - Quick mode skips all external tools
@@ -64,13 +83,16 @@ npx dev-optimizer analyze
 ### Basic Analysis
 
 ```bash
-# Full analysis (30 sec)
-dev-optimizer analyze
-
-# Quick mode - static only (0.2 sec)
+# Quick mode - fast static analysis (0.2 sec)
+# Use for CI pipelines and pre-commit hooks
 dev-optimizer analyze --quick
 
-# Deep mode - with size estimates (45 sec)
+# Default mode - full analysis with npm/knip (30 sec)
+# Use for local development
+dev-optimizer analyze
+
+# Deep mode - with size estimates (31 sec)
+# Use for optimization reviews
 dev-optimizer analyze --deep
 ```
 
@@ -224,12 +246,13 @@ Score: 72/100
 |------|------|----------------|
 | **dev-optimizer --quick** | **0.2s** | Docker + CI + Deps (static) |
 | **dev-optimizer** | **30s** | Docker + CI + Deps + npm audit + knip |
+| **dev-optimizer --deep** | **31s** | All above + size estimates + layer analysis |
 | depcheck | 3s | Unused deps only |
 | knip | 28s | Unused exports only |
 | npm outdated | 10s | Outdated packages only |
 | hadolint | 5s | Dockerfile only |
 
-**Key difference:** dev-optimizer covers 3 domains (Docker, CI, Deps) in a single run, while alternatives cover 1 domain each.
+**Key difference:** dev-optimizer covers 3 domains (Docker, CI, Deps) in one run.
 
 ## Self-Analysis
 
