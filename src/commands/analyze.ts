@@ -155,8 +155,15 @@ export async function analyzeCommand(options: AnalyzeOptions): Promise<void> {
     }
     const deepAnalyzer = new DeepAnalyzer();
     
-    // Size estimates
-    const sizeRecommendations = await deepAnalyzer.getSizeRecommendations(projectPath);
+    // Run all deep analysis in parallel for speed
+    const [sizeRecommendations, dockerFindings, ciEstimate] = await Promise.all([
+      deepAnalyzer.getSizeRecommendations(projectPath),
+      deepAnalyzer.analyzeDockerLayers(projectPath),
+      deepAnalyzer.estimateCiSpeedup(projectPath, allFindings)
+    ]);
+    
+    allFindings.push(...dockerFindings);
+    
     if (!options.quiet) {
       spinner.succeed(`Deep analysis: ${sizeRecommendations.length} recommendations`);
       if (sizeRecommendations.length > 0) {
@@ -165,16 +172,9 @@ export async function analyzeCommand(options: AnalyzeOptions): Promise<void> {
           console.log(`   ${rec.category}: ${rec.current} → ${rec.potential} (${rec.savings})`);
         }
       }
-    }
-    
-    // Docker layers (if Dockerfile exists)
-    const dockerFindings = await deepAnalyzer.analyzeDockerLayers(projectPath);
-    allFindings.push(...dockerFindings);
-    
-    // CI speedup estimate
-    const ciEstimate = await deepAnalyzer.estimateCiSpeedup(projectPath, allFindings);
-    if (!options.quiet && ciEstimate.savings.includes('minutes')) {
-      console.log(`\n⏱️  CI Optimization: ${ciEstimate.current}min → ${ciEstimate.potential}min (${ciEstimate.savings})`);
+      if (ciEstimate.savings.includes('minutes')) {
+        console.log(`\n⏱️  CI Optimization: ${ciEstimate.current}min → ${ciEstimate.potential}min (${ciEstimate.savings})`);
+      }
     }
   }
 
