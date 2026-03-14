@@ -1,0 +1,11 @@
+{
+  "ignore": [
+    "src/self-analysis.ts",
+    "action/src/index.ts",
+    "action/src/index.test.ts",
+    "demo-repos/**/*.js",
+    "demo-repos/**/*.ts",
+    "tests/fixtures/**/*"
+  ],
+  "ignoreExportsUsedInFile": true
+}

@@ -155,21 +155,8 @@ export interface Metrics {
 }
 
 // =============================================================================
-// Fixer Interface
+// Fix Result
 // =============================================================================
-
-export interface Fixer {
-  name: string;
-  canFix(finding: Finding): boolean;
-  fix(finding: Finding, options: FixOptions): Promise<FixResult>;
-  isSafe(finding: Finding): boolean;
-}
-
-export interface FixOptions {
-  dryRun: boolean;
-  backup: boolean;
-  path: string;
-}
 
 export interface FixResult {
   findingId: string;
@@ -179,13 +166,4 @@ export interface FixResult {
   error?: string;
 }
 
-// =============================================================================
-// Reporter Interface
-// =============================================================================
 
-export interface Reporter {
-  format(report: FullReport): string;
-  getExtension(): string;
-}
-
-// =============================================================================
