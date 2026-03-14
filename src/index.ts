@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * dev-optimizer CLI entry point
  */
