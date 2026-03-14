@@ -420,4 +420,4 @@ Contributions welcome! Areas needing help:
 
 ## License
 
-MIT © 2024
+MIT © 2024-2026
