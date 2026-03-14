@@ -381,34 +381,6 @@ node dist/index.js analyze
 npm run test:coverage
 ```
 
-## Roadmap
-
-### ✅ Phase 1 (Complete)
-- [x] Docker analysis (5 checks)
-- [x] Dependency analysis (knip integration)
-- [x] CI/CD analysis (GitHub Actions + GitLab CI)
-- [x] Safe auto-fixes (6 fixes)
-- [x] Console + Markdown reports
-- [x] Quick mode (--quick)
-- [x] Deep mode (--deep)
-- [x] Self-analysis module
-- [x] GitHub Action for PR comments
-- [x] Parallel npm outdated/audit (1.5x faster)
-- [x] Performance optimization (7.5x faster)
-
-### 📝 Phase 2 (Planned)
-- [ ] npm publish v0.1.0
-- [ ] Baseline persistence (compare over time)
-- [ ] History & regression tracking
-- [ ] Landing page
-- [ ] Video demo
-
-### 📝 Phase 3 (Future)
-- [ ] Bundle analysis
-- [ ] Security findings (npm audit)
-- [ ] Custom rules
-- [ ] Team dashboard (SaaS)
-
 ## Contributing
 
 Contributions welcome! Areas needing help:
@@ -420,4 +392,4 @@ Contributions welcome! Areas needing help:
 
 ## License
 
-MIT © 2024-2026
+MIT © 2026
