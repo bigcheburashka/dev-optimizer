@@ -52,6 +52,8 @@ program
   .option('--save', 'Save current analysis as baseline', false)
   .option('--compare', 'Compare with previous baseline', false)
   .option('--history', 'Show baseline history', false)
+  .option('--fail-on-regression', 'Exit with code 1 if score decreased', false)
+  .option('--min-score <number>', 'Exit with code 1 if score below threshold', parseInt)
   .action(baselineCommand);
 
 program.parse();

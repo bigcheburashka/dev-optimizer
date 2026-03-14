@@ -16,7 +16,7 @@ export interface Evidence {
   file?: string;
   line?: number;
   snippet?: string;
-  metrics?: Record<string, number>;
+  metrics?: Record<string, number | string | boolean>;
 }
 
 export interface Impact {

@@ -165,6 +165,14 @@ export class ConsoleReporter {
     
     lines.push(chalk.gray(`   Impact: ${finding.impact.estimate}`));
     
+    // Show CVE link for security findings
+    if (finding.impact.type === 'security' && finding.evidence.metrics?.cve) {
+      const cve = String(finding.evidence.metrics.cve);
+      if (cve && cve !== '') {
+        lines.push(chalk.cyan(`   🔗 https://nvd.nist.gov/vuln/detail/${cve}`));
+      }
+    }
+    
     if (finding.suggestedFix.autoFixable) {
       lines.push(chalk.green(`   Fix: ${finding.suggestedFix.description} (auto-fixable)`));
     } else {

@@ -1,0 +1,32 @@
+{
+  "projectPath": "/root/projects/dev-optimizer/.dev-optimizer",
+  "records": [
+    {
+      "timestamp": "2026-03-14T08:05:53.397Z",
+      "baseline": {
+        "projectType": "ci",
+        "hasPackageJson": true,
+        "hasDockerfile": false,
+        "hasCi": true,
+        "dependencyCount": 0,
+        "nodeModulesSizeMB": 0,
+        "ciTotalTime": 600
+      },
+      "findings": {
+        "total": 1,
+        "byDomain": {
+          "ci": 1
+        },
+        "bySeverity": {
+          "low": 1
+        }
+      },
+      "score": 98,
+      "savings": {
+        "timeSeconds": 0,
+        "sizeMB": 0,
+        "percentImprovement": 0
+      }
+    }
+  ]
+}

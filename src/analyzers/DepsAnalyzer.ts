@@ -620,19 +620,50 @@ export class DepsAnalyzer implements Analyzer {
           const audit = JSON.parse(output);
           if (audit.vulnerabilities) {
             for (const [name, info] of Object.entries(audit.vulnerabilities)) {
-              const vuln = info as { name: string; severity: string; via: string[]; fixAvailable?: boolean };
+              const vuln = info as { 
+                name: string; 
+                severity: string; 
+                via: string[] | string; 
+                fixAvailable?: boolean;
+              };
               const severity = vuln.severity === 'critical' || vuln.severity === 'high' ? 'critical' : 
                                vuln.severity === 'moderate' ? 'high' : 'medium';
+              
+              // Extract CVE info
+              const cveInfo = this.extractCVEInfo(vuln.via);
+              const nvdLink = cveInfo.cve 
+                ? `https://nvd.nist.gov/vuln/detail/${cveInfo.cve}`
+                : `https://www.npmjs.com/advisories`;
+              
               findings.push({
-                id: `deps-011-vuln-${name}`,
+                id: `deps-security-${name}`,
                 domain: 'deps',
-                title: `Vulnerability in ${name}: ${vuln.severity}`,
-                description: `Package '${name}' has ${vuln.severity} security vulnerability.`,
-                evidence: { file: 'package.json', snippet: `"${name}"` },
+                title: `[${vuln.severity.toUpperCase()}] ${name}${cveInfo.cve ? ` (${cveInfo.cve})` : ''}`,
+                description: cveInfo.description || `Package '${name}' has ${vuln.severity} security vulnerability.`,
+                evidence: { 
+                  file: 'package.json', 
+                  snippet: `"${name}"`,
+                  metrics: { 
+                    cve: cveInfo.cve || '',
+                    severity: vuln.severity,
+                    fixable: vuln.fixAvailable ? 1 : 0
+                  }
+                },
                 severity: severity as 'critical' | 'high' | 'medium' | 'low',
                 confidence: 'high',
-                impact: { type: 'security', estimate: 'Security vulnerability requires attention', confidence: 'high' },
-                suggestedFix: { type: 'modify', file: 'package.json', description: vuln.fixAvailable ? 'npm audit fix' : 'Manual review required', autoFixable: vuln.fixAvailable ? true : false },
+                impact: { 
+                  type: 'security', 
+                  estimate: cveInfo.cve ? `CVE: ${cveInfo.cve}` : 'Security vulnerability',
+                  confidence: 'high' 
+                },
+                suggestedFix: { 
+                  type: 'modify', 
+                  file: 'package.json', 
+                  description: vuln.fixAvailable 
+                    ? `npm audit fix${vuln.fixAvailable === true ? '' : ' --force'}` 
+                    : `Update manually. See: ${nvdLink}`,
+                  autoFixable: vuln.fixAvailable ? true : false
+                },
                 autoFixSafe: false
               });
             }
@@ -644,5 +675,27 @@ export class DepsAnalyzer implements Analyzer {
     }
 
     return findings;
+  }
+
+  /**
+   * Extract CVE information from vulnerability details
+   */
+  private extractCVEInfo(via: string[] | string): { cve: string | null; title: string | null; description: string | null } {
+    if (!via) return { cve: null, title: null, description: null };
+    
+    const viaArray = Array.isArray(via) ? via : [via];
+    const viaString = viaArray.join(' ');
+    
+    // Extract CVE ID (format: CVE-YYYY-NNNNN)
+    const cveMatch = viaString.match(/CVE-\d{4}-\d{4,7}/i);
+    const cve = cveMatch ? cveMatch[0] : null;
+    
+    // Extract title (first sentence)
+    const title = viaArray[0]?.split('.')[0] || null;
+    
+    // Full description
+    const description = viaArray.join('. ') || null;
+    
+    return { cve, title, description };
   }
 }
