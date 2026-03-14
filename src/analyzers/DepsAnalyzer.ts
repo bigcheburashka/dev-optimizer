@@ -71,9 +71,41 @@ export class DepsAnalyzer implements Analyzer {
         findings.push(this.createUnusedDepFinding(depName, packageJson, true, projectPath));
       }
 
-      // Process unused exports
+      // Process unused exports (files)
       for (const item of knipResult.exports || []) {
         if (item.type === 'unused') {
+          // Skip common false positives
+          const filePath = item.file || '';
+          
+          // Skip files that are likely entry points or configuration
+          const likelyUsed = [
+            /server\.(js|ts)$/,
+            /app\.(js|ts)$/,
+            /index\.(js|ts)$/,
+            /main\.(js|ts)$/,
+            /config\.(js|ts)$/,
+            /\.d\.ts$/,
+            /types\.(js|ts)$/,
+            /swagger\.(js|ts)$/,
+            /database\.(js|ts)$/,
+            /migrations\//,
+            /seeds\//,
+          ];
+          
+          if (likelyUsed.some(pattern => pattern.test(filePath))) {
+            continue; // Skip likely used files
+          }
+          
+          // Reduce severity if file might be used dynamically
+          const dynamicUsage = [
+            /middleware\//,
+            /services\//,
+            /jobs\//,
+            /api\//,
+          ];
+          
+          const isLikelyDynamic = dynamicUsage.some(pattern => pattern.test(filePath));
+          
           findings.push({
             id: `deps-006-${item.name}`,
             domain: 'deps',
