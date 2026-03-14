@@ -4,16 +4,43 @@
 
 [![npm version](https://badge.fury.io/js/dev-optimizer.svg)](https://badge.fury.io/js/dev-optimizer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js Version](https://img.shields.io/node/v/dev-optimizer.svg)](https://nodejs.org/)
 
-## Quick Start
+## Status
+
+| Feature | Status |
+|---------|--------|
+| Docker analysis | ✅ Ready |
+| Dependency analysis | ✅ Ready |
+| CI/CD analysis | ✅ Ready |
+| Safe auto-fixes | ✅ Ready |
+| GitHub Action | ✅ Ready |
+| Deep analysis (--deep) | ✅ Ready |
+| Quick mode (--quick) | ✅ Ready |
+| npm publish | ⏳ Pending |
+
+## Installation
 
 ```bash
 # Install globally
 npm install -g dev-optimizer
 
+# Or use with npx (no install)
+npx dev-optimizer analyze
+```
+
+## Quick Start
+
+```bash
 # Analyze any Node.js project
 cd your-project
 dev-optimizer analyze
+
+# Quick mode (3 seconds, static only)
+dev-optimizer analyze --quick
+
+# Deep mode (with size estimates)
+dev-optimizer analyze --deep
 
 # Preview fixes
 dev-optimizer fix --dry-run
@@ -24,46 +51,40 @@ dev-optimizer fix --safe
 
 ## What It Does
 
-**🐳 Docker Analysis**
-- Missing .dockerignore → Auto-create
-- No multistage build → Suggest conversion
-- Large base image → Recommend alpine
-- Too many layers → Combine instructions
-- No cleanup → Add cleanup commands
+### 🐳 Docker Analysis
+| Check | Auto-fix |
+|-------|----------|
+| Missing .dockerignore | ✅ Create file |
+| No multistage build | ❌ Suggest only |
+| Large base image | ❌ Suggest alpine |
+| Too many layers | ❌ Suggest combine |
+| No cleanup commands | ❌ Suggest cleanup |
 
-**📦 Dependency Analysis**
-- Unused dependencies → Remove (knip integration)
-- Duplicate dependencies → Deduplicate
-- Missing lockfile → Generate
-- Large node_modules → Warn with alternatives
+### 📦 Dependency Analysis
+| Check | Auto-fix |
+|-------|----------|
+| Unused dependencies | ✅ Remove (high confidence) |
+| Missing lockfile | ✅ Generate |
+| Deprecated packages | ❌ Suggest update |
+| Vulnerabilities | ❌ Group by severity |
 
-**🔄 CI/CD Analysis**
-- Missing cache → Add setup-node cache
-- No matrix strategy → Suggest Node versions
-- No timeout → Add timeout-minutes
-- Sequential jobs → Suggest parallelization
+### 🔄 CI/CD Analysis
+| Check | Auto-fix |
+|-------|----------|
+| Missing cache | ✅ Add cache config |
+| No timeout | ✅ Add timeout-minutes |
+| No matrix strategy | ❌ Suggest versions |
+| Sequential jobs | ❌ Suggest parallel |
 
 ## Example Output
 
 ```
 🔍 Dev Optimizer v0.1.0
 
-Analyzing: your-project
-
 📁 Project: your-project
    Type: nextjs
    Package Manager: npm
    CI Platform: github-actions
-
-📊 Stats:
-   Dependencies: 45
-   node_modules: 280 MB
-   CI time (est.): 10 min
-
-🔍 Available analysis domains:
-   🐳 docker
-   📦 deps
-   🔄 ci
 
 🐳 Running Docker analysis...
 📦 Running Dependencies analysis...
@@ -71,63 +92,53 @@ Analyzing: your-project
 
 ══════════════════════════════════════════════════════
 
-Score: 55/100
+Score: 72/100
 
-📊 Baseline
-──────────────────────────────────────
-Project: nextjs
-Dependencies: 45
-Docker: ✅
-CI/CD: ✅
-
-🔴 Top Findings (3 issues)
+🔴 Top Findings
 ──────────────────────────────────────
 🔴 [HIGH] Missing .dockerignore file
-   Impact: Reduce build context by 400-500 MB
-   Fix: Create .dockerignore (auto-fixable ✅)
+   Impact: Reduce build context by 400 MB
+   Fix: Create .dockerignore ✅ auto-fixable
 
-🟠 [HIGH] No caching configured in .github/workflows/ci.yml
-   Impact: Save 2-3 minutes per CI run
-   Fix: Add actions/cache for npm (auto-fixable ✅)
+🟠 [HIGH] No caching in GitHub Actions
+   Impact: Save 2-3 min per CI run
+   Fix: Add actions/cache ✅ auto-fixable
 
 🟡 [MEDIUM] Unused dependency: lodash
-   Impact: Remove to reduce node_modules size
-   Fix: Remove from dependencies (auto-fixable ✅)
+   Impact: Reduce bundle size
+   Fix: Remove from dependencies ✅ auto-fixable
 
-💰 Potential Savings
-──────────────────────────────────────
-Size: 450 MB
-Time: 5 min/CI run
-Improvement: 35%
+💾 Potential Savings: 450 MB, 5 min/CI run
 ```
 
 ## Commands
 
 ### `analyze`
 
-Analyze project for optimization opportunities.
-
 ```bash
-# Analyze all domains
+# Full analysis
 dev-optimizer analyze
 
-# Analyze specific domain
+# Quick (3 sec, static only)
+dev-optimizer analyze --quick
+
+# Deep (with size estimates)
+dev-optimizer analyze --deep
+
+# Specific domain
 dev-optimizer analyze --type docker
 dev-optimizer analyze --type deps
 dev-optimizer analyze --type ci
 
 # Output formats
-dev-optimizer analyze --format table    # Console (default)
-dev-optimizer analyze --format markdown # PR-ready
-dev-optimizer analyze --format json     # CI/CD
+dev-optimizer analyze --format json
+dev-optimizer analyze --format markdown
 
-# Limit results
-dev-optimizer analyze --top 5
+# Quiet mode
+dev-optimizer analyze --quiet
 ```
 
 ### `fix`
-
-Apply safe optimizations automatically.
 
 ```bash
 # Preview changes
@@ -136,74 +147,65 @@ dev-optimizer fix --dry-run
 # Apply safe fixes only
 dev-optimizer fix --safe
 
-# Apply all auto-fixable
-dev-optimizer fix
-
-# Fix specific domain
-dev-optimizer fix --type docker --safe
+# Interactive mode (confirm each fix)
+dev-optimizer fix --interactive
 ```
 
-## Finding Schema
+### `baseline`
 
-All findings follow a unified schema:
+```bash
+# Save current state as baseline
+dev-optimizer baseline save
 
-```typescript
-interface Finding {
-  id: string;                    // docker-001, ci-002, etc.
-  domain: 'docker' | 'deps' | 'ci';
-  title: string;                 // Human-readable title
-  description: string;            // Detailed explanation
-  evidence: {
-    file?: string;
-    line?: number;
-    snippet?: string;
-    metrics?: Record<string, number>;
-  };
-  severity: 'critical' | 'high' | 'medium' | 'low';
-  confidence: 'high' | 'medium' | 'low';
-  impact: {
-    type: 'time' | 'size' | 'cost';
-    estimate: string;
-  };
-  suggestedFix: {
-    type: 'create' | 'modify' | 'delete';
-    file: string;
-    description: string;
-    autoFixable: boolean;
-  };
-}
+# Compare against baseline
+dev-optimizer baseline check
 ```
 
-## Safe Fixes
+## GitHub Action
 
-Only these fixes are applied automatically:
+Create `.github/workflows/dev-optimizer.yml`:
+
+```yaml
+name: Dev Optimizer
+on: [pull_request]
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bigcheburashka/dev-optimizer@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+The action will analyze your PR and post a comment with findings.
+
+## Self-Analysis
+
+Dev Optimizer can analyze itself for issues:
+
+```bash
+dev-optimizer analyze --path .
+```
+
+Features detected:
+- Unused dependencies (like `depcheck` was found)
+- Files without tests
+- Missing package.json fields
+
+## Auto-Fixes
+
+These fixes are safe to apply automatically:
 
 | Fix | Domain | Risk |
 |-----|--------|------|
 | Create .dockerignore | Docker | None |
-| Create .gitignore | Deps | None |
 | Create package-lock.json | Deps | None |
 | Add cache to setup-node | CI | None |
-| Remove unused dep (high confidence) | Deps | Low |
-
-All other fixes require manual review.
-
-## Demo
-
-```bash
-# Clone demo repos
-git clone https://github.com/bigcheburashka/dev-optimizer
-
-# Run demos
-cd dev-optimizer/demo-repos/demo-docker
-npx dev-optimizer analyze
-
-cd ../demo-ci
-npx dev-optimizer analyze
-
-cd ../demo-deps
-npx dev-optimizer analyze
-```
+| Add timeout-minutes | CI | None |
+| Add retention-days | CI | None |
+| Remove unused dep (high conf) | Deps | Low |
 
 ## Architecture
 
@@ -214,13 +216,17 @@ src/
 │   ├── DepsAnalyzer.ts      # package.json + knip
 │   └── CiAnalyzer.ts        # GitHub Actions + GitLab CI
 ├── commands/
-│   ├── analyze.ts           # Analysis command
-│   └── fix.ts               # Fix command
+│   ├── analyze.ts           # Main analysis command
+│   ├── fix.ts               # Auto-fix command
+│   ├── baseline.ts          # Baseline management
+│   └── metrics.ts           # Metrics command
 ├── reporters/
 │   ├── ConsoleReporter.ts   # Table output
-│   └── MarkdownReporter.ts  # PR comments
+│   └── MarkdownReporter.ts   # PR comments
 ├── discovery/
 │   └── RepoInventory.ts     # Project detection
+├── deep-analyzer.ts         # Size estimates
+├── self-analysis.ts         # Self-check
 └── types.ts                 # Finding schema
 ```
 
@@ -230,7 +236,7 @@ src/
 # Install dependencies
 npm install
 
-# Run tests
+# Run tests (59 tests)
 npm test
 
 # Build
@@ -238,32 +244,45 @@ npm run build
 
 # Run locally
 node dist/index.js analyze
+
+# Test coverage
+npm run test:coverage
 ```
 
 ## Roadmap
 
-### Phase 1 (Current)
-- ✅ Docker analysis
-- ✅ Dependency analysis (knip)
-- ✅ CI/CD analysis
-- ✅ Safe auto-fixes
-- ✅ Console + Markdown reports
+### ✅ Phase 1 (Complete)
+- [x] Docker analysis (5 checks)
+- [x] Dependency analysis (knip integration)
+- [x] CI/CD analysis (GitHub Actions + GitLab CI)
+- [x] Safe auto-fixes (6 fixes)
+- [x] Console + Markdown reports
+- [x] Quick mode (--quick)
+- [x] Deep mode (--deep)
+- [x] Self-analysis module
+- [x] GitHub Action for PR comments
 
-### Phase 2
-- 📝 GitHub Action for PR comments
-- 📝 Baseline persistence
-- 📝 History & regression tracking
-- 📝 GitLab CI parity
+### 📝 Phase 2 (Planned)
+- [ ] npm publish v0.1.0
+- [ ] Baseline persistence (compare over time)
+- [ ] History & regression tracking
+- [ ] Landing page
+- [ ] Video demo
 
-### Phase 3
-- 📝 Bundle analysis
-- 📝 Security findings
-- 📝 Custom rules
-- 📝 Team dashboard
+### 📝 Phase 3 (Future)
+- [ ] Bundle analysis
+- [ ] Security findings (npm audit)
+- [ ] Custom rules
+- [ ] Team dashboard (SaaS)
 
 ## Contributing
 
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
+Contributions welcome! Areas needing help:
+
+1. **Tests** - Increase coverage to 100%
+2. **Reporters** - JSON reporter, SARIF format
+3. **Analyzers** - More checks per domain
+4. **CI Platforms** - CircleCI, Jenkins, Azure Pipelines
 
 ## License
 
