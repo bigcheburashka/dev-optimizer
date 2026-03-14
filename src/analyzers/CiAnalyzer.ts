@@ -231,6 +231,18 @@ export class CiAnalyzer implements Analyzer {
       findings.push(duplicateFinding);
     }
 
+    // NEW: Finding: Duplicate npm install steps
+    const duplicateStepsFinding = this.checkDuplicateSteps(workflow, fileName);
+    if (duplicateStepsFinding) {
+      findings.push(duplicateStepsFinding);
+    }
+
+    // NEW: Finding: Missing concurrency control
+    const concurrencyFinding = this.checkConcurrency(workflow, fileName);
+    if (concurrencyFinding) {
+      findings.push(concurrencyFinding);
+    }
+
     return findings;
   }
 
@@ -579,6 +591,96 @@ export class CiAnalyzer implements Analyzer {
           };
         }
       }
+    }
+    
+    return null;
+  }
+
+  /**
+   * Check for duplicate npm install steps across jobs
+   */
+  private checkDuplicateSteps(workflow: any, fileName: string): Finding | null {
+    const jobs = workflow.jobs || {};
+    const installCommands: string[] = [];
+    
+    for (const [jobName, job] of Object.entries(jobs)) {
+      const steps = (job as any)?.steps || [];
+      
+      for (const step of steps) {
+        // Check for npm install, npm ci, yarn install
+        const run = step.run || '';
+        if (/npm\s+(install|ci)|yarn\s+install|pnpm\s+install/.test(run)) {
+          installCommands.push(`${jobName}: ${run.trim().substring(0, 50)}`);
+        }
+      }
+    }
+    
+    if (installCommands.length > 1) {
+      return {
+        id: `ci-007-${fileName}`,
+        domain: 'ci',
+        title: `Duplicate npm install in ${fileName}`,
+        description: `Found ${installCommands.length} npm install steps across jobs. Each install takes ~1-2 minutes.`,
+        evidence: {
+          file: fileName,
+          metrics: {
+            installCount: installCommands.length,
+            estimatedWasteMinutes: installCommands.length * 1.5
+          }
+        },
+        severity: 'high',
+        confidence: 'high',
+        impact: {
+          type: 'cost',
+          estimate: `Save \$${(installCommands.length * 1.5 * 0.10).toFixed(2)} per CI run (assuming $0.10/min)`,
+          confidence: 'high'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: `.github/workflows/${fileName}`,
+          description: 'Use actions/setup-node with cache, or combine install steps',
+          autoFixable: false
+        },
+        autoFixSafe: false
+      };
+    }
+    
+    return null;
+  }
+
+  /**
+   * Check for missing concurrency control
+   */
+  private checkConcurrency(workflow: any, fileName: string): Finding | null {
+    // Skip if workflow doesn't have trigger for pushes/PRs
+    const on = workflow.on || {};
+    const hasPushTrigger = on.push || on.pull_request;
+    if (!hasPushTrigger) return null;
+
+    const concurrency = workflow.concurrency;
+    if (!concurrency) {
+      return {
+        id: `ci-008-${fileName}`,
+        domain: 'ci',
+        title: `Missing concurrency control in ${fileName}`,
+        description: 'Workflow runs on every push without canceling outdated runs. This wastes CI minutes on outdated commits.',
+        evidence: { file: fileName },
+        severity: 'medium',
+        confidence: 'high',
+        impact: {
+          type: 'cost',
+          estimate: 'Save $0.50-2.00 per PR by canceling outdated runs',
+          confidence: 'medium'
+        },
+        suggestedFix: {
+          type: 'modify',
+          file: `.github/workflows/${fileName}`,
+          description: 'Add concurrency control to cancel outdated runs',
+          diff: `concurrency:\n  group: \${{ github.workflow }}-\${{ github.ref }}\n  cancel-in-progress: true`,
+          autoFixable: false
+        },
+        autoFixSafe: false
+      };
     }
     
     return null;
