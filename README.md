@@ -200,6 +200,8 @@ jobs:
 | Outdated packages | 10s* | ❌ Suggest update |
 | Vulnerabilities | 10s* | ❌ CVE links |
 | Duplicate entries | 0.01s | ❌ Suggest cleanup |
+| **Duplicate versions** | 2s | ❌ Suggest dedupe |
+| Missing lockfile | 0.01s | ✅ npm install |
 
 *\*run in parallel*
 
