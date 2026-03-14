@@ -321,10 +321,12 @@ Dev Optimizer can analyze itself for issues:
 dev-optimizer analyze --path .
 ```
 
-Features detected:
-- Unused dependencies (like `depcheck` was found)
-- Files without tests
-- Missing package.json fields
+Current self-analysis results (2026-03-14):
+- **Score: 46/100**
+- Duplicate package versions (safe, different majors)
+- Missing CI concurrency control (fixed)
+
+Run periodically to catch issues early.
 
 ## Auto-Fixes
 
