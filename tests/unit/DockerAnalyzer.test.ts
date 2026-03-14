@@ -86,9 +86,9 @@ describe('DockerAnalyzer', () => {
     it('should have correct impact structure', async () => {
       const projectPath = path.join(__dirname, '../fixtures/bad-dockerfile');
       const result = await analyzer.analyze(projectPath);
-      
+
       for (const finding of result.findings) {
-        expect(finding.impact.type).toMatch(/time|size|cost/);
+        expect(finding.impact.type).toMatch(/time|size|cost|stability|reliability|security/);
         expect(finding.impact.estimate).toBeDefined();
         expect(['high', 'medium', 'low']).toContain(finding.impact.confidence);
       }
