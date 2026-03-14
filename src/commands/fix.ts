@@ -5,6 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as readline from 'readline';
 import { DockerAnalyzer } from '../analyzers/DockerAnalyzer.js';
 import { DepsAnalyzer } from '../analyzers/DepsAnalyzer.js';
 import { CiAnalyzer } from '../analyzers/CiAnalyzer.js';
@@ -14,6 +15,7 @@ interface FixOptions {
   path: string;
   dryRun: boolean;
   safe: boolean;
+  interactive: boolean;
   domain?: 'docker' | 'deps' | 'ci' | 'all';
 }
 
@@ -32,7 +34,7 @@ export async function fixCommand(options: FixOptions): Promise<void> {
 
   console.log(`🔧 Dev Optimizer Fix\n`);
   console.log(`Path: ${projectPath}`);
-  console.log(`Mode: ${options.dryRun ? 'dry-run (preview only)' : 'apply changes'}`);
+  console.log(`Mode: ${options.dryRun ? 'dry-run (preview only)' : options.interactive ? 'interactive' : 'apply changes'}`);
   console.log(`Safety: ${options.safe ? 'safe fixes only' : 'all auto-fixable'}\n`);
 
   // Collect findings from all analyzers
@@ -72,7 +74,7 @@ export async function fixCommand(options: FixOptions): Promise<void> {
   console.log(`\n📊 Found ${allFindings.length} issues\n`);
 
   // Filter auto-fixable findings
-  const autoFixable = allFindings.filter(f => f.suggestedFix.autoFixable);
+  const autoFixable = allFindings.filter(f => f.suggestedFix?.autoFixable);
   const safeFixable = autoFixable.filter(f => f.autoFixSafe);
 
   const toFix = options.safe ? safeFixable : autoFixable;
@@ -89,12 +91,63 @@ export async function fixCommand(options: FixOptions): Promise<void> {
     return;
   }
 
-  // Show what will be fixed
+  // Interactive mode: ask for each fix
+  if (options.interactive && !options.dryRun) {
+    const approved: Finding[] = [];
+    let applyAll = false;
+
+    console.log('═'.repeat(60));
+    console.log('Interactive mode: review each fix\n');
+
+    for (const finding of toFix) {
+      if (applyAll) {
+        approved.push(finding);
+        continue;
+      }
+
+      const icon = { docker: '🐳', deps: '📦', ci: '🔄' }[finding.domain] || '❓';
+      console.log(`\n${icon} [${finding.severity.toUpperCase()}] ${finding.title}`);
+      console.log(`   File: ${finding.suggestedFix.file}`);
+      console.log(`   Action: ${finding.suggestedFix.description}`);
+      if (finding.suggestedFix.diff) {
+        console.log(`   Change:\n${finding.suggestedFix.diff.split('\n').map(l => '     ' + l).join('\n')}`);
+      }
+
+      const answer = await askQuestion('\n   Apply? (y=yes/n=no/a=all/q=quit) > ');
+      
+      if (answer.toLowerCase() === 'a') {
+        approved.push(finding);
+        applyAll = true;
+        console.log('   ✅ Applying all remaining fixes...');
+      } else if (answer.toLowerCase() === 'y') {
+        approved.push(finding);
+        console.log('   ✅ Will apply');
+      } else if (answer.toLowerCase() === 'q') {
+        console.log('\n   🛑 Quitting...\n');
+        break;
+      } else {
+        console.log('   ⏭️  Skipping');
+      }
+    }
+
+    if (approved.length === 0) {
+      console.log('\n✅ No fixes selected.\n');
+      return;
+    }
+
+    console.log(`\n📋 Selected ${approved.length} fixes to apply.\n`);
+    
+    // Apply approved fixes
+    await applyFixes(projectPath, approved, options);
+    return;
+  }
+
+  // Non-interactive mode: show planned fixes
   console.log('═'.repeat(60));
   console.log('Planned fixes:\n');
 
   for (const finding of toFix) {
-    const icon = { docker: '🐳', deps: '📦', ci: '🔄' }[finding.domain];
+    const icon = { docker: '🐳', deps: '📦', ci: '🔄' }[finding.domain] || '❓';
     console.log(`${icon} [${finding.severity.toUpperCase()}] ${finding.title}`);
     console.log(`   File: ${finding.suggestedFix.file}`);
     console.log(`   Action: ${finding.suggestedFix.description}\n`);
@@ -116,7 +169,31 @@ export async function fixCommand(options: FixOptions): Promise<void> {
     return;
   }
 
-  // Apply fixes
+  // Apply fixes in non-interactive mode
+  await applyFixes(projectPath, toFix, options);
+}
+
+/**
+ * Ask user a question via readline
+ */
+function askQuestion(prompt: string): Promise<string> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  return new Promise((resolve) => {
+    rl.question(prompt, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+/**
+ * Apply fixes and show results
+ */
+async function applyFixes(projectPath: string, toFix: Finding[], options: FixOptions): Promise<void> {
   const applied: AppliedFix[] = [];
   const skipped: AppliedFix[] = [];
   const errors: { finding: Finding; error: string }[] = [];
@@ -153,13 +230,6 @@ export async function fixCommand(options: FixOptions): Promise<void> {
     for (const { finding, error } of errors) {
       console.log(`  ${finding.title}: ${error}`);
     }
-  }
-
-  // Next steps
-  const remaining = allFindings.filter(f => !f.suggestedFix.autoFixable);
-  if (remaining.length > 0) {
-    console.log(`\n💡 ${remaining.length} issues require manual review.`);
-    console.log('   Run `dev-optimizer analyze` to see details.\n');
   }
 }
 
