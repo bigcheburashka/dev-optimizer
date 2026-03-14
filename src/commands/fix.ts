@@ -6,6 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
+import * as childProcess from 'child_process';
 import { DockerAnalyzer } from '../analyzers/DockerAnalyzer.js';
 import { DepsAnalyzer } from '../analyzers/DepsAnalyzer.js';
 import { CiAnalyzer } from '../analyzers/CiAnalyzer.js';
@@ -202,6 +203,12 @@ async function applyFixes(projectPath: string, toFix: Finding[], options: FixOpt
   console.log('\n🔨 Applying fixes...\n');
 
   for (const finding of toFix) {
+    // Special handling for duplicate dependencies
+    if (finding.id.startsWith('deps-duplicate')) {
+      await handleDuplicateDeps(projectPath, finding, options);
+      continue;
+    }
+    
     const result = await applyFix(projectPath, finding);
     
     if (result.applied) {
@@ -230,6 +237,100 @@ async function applyFixes(projectPath: string, toFix: Finding[], options: FixOpt
     for (const { finding, error } of errors) {
       console.log(`  ${finding.title}: ${error}`);
     }
+  }
+}
+
+/**
+ * Handle duplicate dependencies interactively
+ */
+async function handleDuplicateDeps(projectPath: string, finding: Finding, options: FixOptions): Promise<void> {
+  const packageName = finding.id.replace('deps-duplicate-', '');
+  const versions = finding.evidence?.metrics?.versions || 'unknown';
+  
+  console.log(`\n📦 [${finding.severity.toUpperCase()}] ${finding.title}`);
+  console.log(`   Versions: ${versions}`);
+  console.log(`   Description: ${finding.description}\n`);
+  
+  // Show dependency tree
+  console.log('   Dependency tree:');
+  try {
+    const tree = childProcess.execSync(
+      `npm ls ${packageName} 2>/dev/null || npm ls ${packageName}`,
+      { cwd: projectPath, encoding: 'utf-8', timeout: 10000 }
+    );
+    const lines = tree.split('\n').slice(0, 10);
+    for (const line of lines) {
+      console.log('   ' + line);
+    }
+    if (tree.split('\n').length > 10) {
+      console.log('   ... (truncated)');
+    }
+  } catch (e) {
+    console.log('   (Could not load dependency tree)');
+  }
+  
+  if (options.dryRun) {
+    console.log('\n   Options to resolve:');
+    console.log('   [1] npm dedupe --dry-run  (preview merge)');
+    console.log('   [2] npm update             (update packages)');
+    console.log('   [3] Skip                   (keep both versions)');
+    return;
+  }
+  
+  // Ask user what to do
+  console.log('\n   Options:');
+  console.log('   [1] npm dedupe --dry-run  (preview merge)');
+  console.log('   [2] npm dedupe            (apply merge)');
+  console.log('   [3] npm update             (update packages)');
+  console.log('   [4] Skip                  (keep both versions)\n');
+  
+  const answer = await askQuestion('   Choose option [1-4]: ');
+  
+  switch (answer) {
+    case '1':
+      console.log('\n   Running npm dedupe --dry-run...\n');
+      try {
+        const result = childProcess.execSync('npm dedupe --dry-run', {
+          cwd: projectPath,
+          encoding: 'utf-8',
+          timeout: 30000
+        });
+        console.log(result || '   No duplicates to merge');
+      } catch (e) {
+        console.log('   ' + (e as any).message);
+      }
+      break;
+      
+    case '2':
+      console.log('\n   Running npm dedupe...\n');
+      try {
+        childProcess.execSync('npm dedupe', {
+          cwd: projectPath,
+          encoding: 'utf-8',
+          timeout: 60000
+        });
+        console.log('   ✅ Dedupe completed');
+      } catch (e) {
+        console.log('   ❌ ' + (e as any).message);
+      }
+      break;
+      
+    case '3':
+      console.log('\n   Running npm update...\n');
+      try {
+        childProcess.execSync('npm update', {
+          cwd: projectPath,
+          encoding: 'utf-8',
+          timeout: 120000
+        });
+        console.log('   ✅ Update completed');
+      } catch (e) {
+        console.log('   ❌ ' + (e as any).message);
+      }
+      break;
+      
+    default:
+      console.log('   ⏭️  Skipped');
   }
 }
 
