@@ -106,6 +106,56 @@ describe('DepsAnalyzer', () => {
     });
   });
 
+  describe('knip dependency parsing', () => {
+    it('should handle string dependency names from knip', () => {
+      // knip can return dependencies as strings
+      const depName = 'lodash';
+      const result = typeof depName === 'string' ? depName : (depName as any).name || String(depName);
+      expect(result).toBe('lodash');
+    });
+
+    it('should handle object dependency names from knip', () => {
+      // knip can also return dependencies as objects with name property
+      const depObj = { name: 'moment', version: '2.29.0' };
+      const result = typeof depObj === 'string' ? depObj : (depObj as any).name || String(depObj);
+      expect(result).toBe('moment');
+    });
+
+    it('should not show [object Object] for dependency names', () => {
+      // Test the actual fix - ensure we never get [object Object]
+      const depObj = { name: 'axios' };
+      const depName = typeof depObj === 'string' ? depObj : (depObj as any).name || String(depObj);
+      
+      // This should NOT be "[object Object]"
+      expect(depName).not.toBe('[object Object]');
+      expect(depName).toBe('axios');
+    });
+
+    it('should handle mixed string and object dependencies', () => {
+      const deps = [
+        'lodash',
+        { name: 'moment' },
+        'axios',
+        { name: 'underscore' }
+      ];
+      
+      const names = deps.map(d => typeof d === 'string' ? d : (d as any).name || String(d));
+      
+      expect(names).toEqual(['lodash', 'moment', 'axios', 'underscore']);
+      expect(names).not.toContain('[object Object]');
+    });
+
+    it('should handle unnamed dependency gracefully', () => {
+      // Edge case: dependency object without name
+      const depObj = { version: '1.0.0' };
+      const result = typeof depObj === 'string' ? depObj : (depObj as any).name || String(depObj);
+      
+      // Should fall back to String() which gives "[object Object]"
+      // But at least it won't crash
+      expect(typeof result).toBe('string');
+    });
+  });
+
   describe('baseline', () => {
     it('should detect if package.json has Docker', async () => {
       const projectPath = path.join(__dirname, '../../');

@@ -61,12 +61,14 @@ export class DepsAnalyzer implements Analyzer {
     if (knipResult) {
       // Process unused dependencies
       for (const dep of knipResult.dependencies || []) {
-        findings.push(this.createUnusedDepFinding(dep, packageJson));
+        const depName = typeof dep === 'string' ? dep : (dep as any).name || String(dep);
+        findings.push(this.createUnusedDepFinding(depName, packageJson));
       }
 
       // Process unused dev dependencies
       for (const dep of knipResult.devDependencies || []) {
-        findings.push(this.createUnusedDepFinding(dep, packageJson, true));
+        const depName = typeof dep === 'string' ? dep : (dep as any).name || String(dep);
+        findings.push(this.createUnusedDepFinding(depName, packageJson, true));
       }
 
       // Process unused exports
