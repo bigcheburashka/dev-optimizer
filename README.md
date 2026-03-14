@@ -66,7 +66,7 @@ dev-optimizer fix --safe
 | Unused dependencies | ✅ Remove (high confidence) |
 | Missing lockfile | ✅ Generate |
 | Deprecated packages | ❌ Suggest update |
-| Vulnerabilities | ❌ Group by severity |
+| Vulnerabilities | ❌ Group by severity + CVE links |
 
 ### 🔄 CI/CD Analysis
 | Check | Auto-fix |
@@ -155,10 +155,19 @@ dev-optimizer fix --interactive
 
 ```bash
 # Save current state as baseline
-dev-optimizer baseline save
+dev-optimizer baseline --save
 
 # Compare against baseline
-dev-optimizer baseline check
+dev-optimizer baseline --compare
+
+# Show baseline history
+dev-optimizer baseline --history
+
+# CI: Fail if score decreased
+dev-optimizer baseline --compare --fail-on-regression
+
+# CI: Fail if score below threshold
+dev-optimizer baseline --compare --min-score 80
 ```
 
 ## GitHub Action
