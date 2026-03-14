@@ -1,0 +1,7 @@
+# GitHub Action - keep dist but ignore node_modules
+node_modules/
+*.ts
+!*.d.ts
+src/
+*.map
+package-lock.json

@@ -33,3 +33,6 @@ tests/fixtures/integration/
 .dev-optimizer-cache/
 .npm/
 .cache/
+
+# Action dist is needed for GitHub Actions
+!action/dist/
