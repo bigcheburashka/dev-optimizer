@@ -225,12 +225,6 @@ export class CiAnalyzer implements Analyzer {
       findings.push(artifactFinding);
     }
 
-    // Finding: Self-hosted runners opportunity
-    const runnerFinding = this.checkSelfHostedRunners(workflow, fileName);
-    if (runnerFinding) {
-      findings.push(runnerFinding);
-    }
-
     // Finding: Duplicate jobs
     const duplicateFinding = this.checkDuplicateJobs(workflow, fileName);
     if (duplicateFinding) {
@@ -526,50 +520,6 @@ export class CiAnalyzer implements Analyzer {
               type: 'modify',
               file: `.github/workflows/${fileName}`,
               description: 'Add retention-days to upload-artifact step',
-              autoFixable: false
-            },
-            autoFixSafe: false
-          };
-        }
-      }
-    }
-    
-    return null;
-  }
-
-  /**
-   * Check for self-hosted runners opportunity
-   */
-  private checkSelfHostedRunners(workflow: any, fileName: string): Finding | null {
-    const jobs = workflow.jobs || {};
-    
-    for (const [jobName, job] of Object.entries(jobs)) {
-      const runsOn = (job as any)?.['runs-on'] || '';
-      
-      // Check if using expensive GitHub-hosted runners for long jobs
-      if (typeof runsOn === 'string' && runsOn.includes('ubuntu')) {
-        const steps = (job as any)?.steps || [];
-        const stepCount = steps.length;
-        
-        // Estimate job complexity by step count
-        if (stepCount > 5) {
-          return {
-            id: `ci-007-${fileName}`,
-            domain: 'ci',
-            title: `Consider self-hosted runners for ${fileName}`,
-            description: 'Long-running jobs on GitHub-hosted runners can be expensive. Consider self-hosted runners for cost optimization.',
-            evidence: { file: fileName, metrics: { stepCount } },
-            severity: 'low',
-            confidence: 'low',
-            impact: {
-              type: 'cost',
-              estimate: 'Self-hosted runners can save 50-80% on CI costs',
-              confidence: 'low'
-            },
-            suggestedFix: {
-              type: 'modify',
-              file: `.github/workflows/${fileName}`,
-              description: 'Consider self-hosted runners for long-running jobs',
               autoFixable: false
             },
             autoFixSafe: false
