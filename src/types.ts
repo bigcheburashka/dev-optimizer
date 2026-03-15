@@ -42,7 +42,7 @@ export interface Finding {
   severity: Severity;
   confidence: Confidence;
   impact: Impact;
-  suggestedFix: SuggestedFix;
+  suggestedFix?: SuggestedFix;
   autoFixSafe: boolean;
 }
 
