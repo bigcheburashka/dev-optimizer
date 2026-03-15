@@ -68,7 +68,7 @@ export class ConsoleReporter {
 
     // Quick Wins (unique, from otherFindings)
     const quickWins = otherFindings
-      .filter(f => f.autoFixSafe || f.suggestedFix.autoFixable)
+      .filter(f => f.autoFixSafe || f.suggestedFix?.autoFixable)
       .slice(0, 5);
       
     if (quickWins.length > 0) {
@@ -173,9 +173,9 @@ export class ConsoleReporter {
       }
     }
     
-    if (finding.suggestedFix.autoFixable) {
+    if (finding.suggestedFix?.autoFixable) {
       lines.push(chalk.green(`   Fix: ${finding.suggestedFix.description} (auto-fixable)`));
-    } else {
+    } else if (finding.suggestedFix) {
       lines.push(chalk.yellow(`   Suggestion: ${finding.suggestedFix.description}`));
     }
     
@@ -187,7 +187,7 @@ export class ConsoleReporter {
     
     for (const finding of findings) {
       const severityColor = this.getSeverityColor(finding.severity);
-      const autoFix = finding.suggestedFix.autoFixable ? chalk.green(' ✅') : '';
+      const autoFix = finding.suggestedFix?.autoFixable ? chalk.green(' ✅') : '';
       lines.push(`  ${severityColor('●')} ${finding.title}${autoFix}`);
     }
     

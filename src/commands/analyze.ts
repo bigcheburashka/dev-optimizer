@@ -207,7 +207,7 @@ export async function analyzeCommand(options: AnalyzeOptions): Promise<void> {
 
   // Categorize findings
   const topFindings = allFindings.slice(0, options.top);
-  const quickWins = allFindings.filter(f => f.suggestedFix.autoFixable && f.confidence === 'high');
+  const quickWins = allFindings.filter(f => f.suggestedFix?.autoFixable && f.confidence === 'high');
   const manualReview = allFindings.filter(f => !f.autoFixSafe || f.confidence !== 'high');
 
   // Calculate percentage improvement
